@@ -1,4 +1,6 @@
-TradingBot
+# TradingBot
+trade-machine
+
 Purpose
 TradingBot is a swing-trading decision-support project.
 The system combines:
