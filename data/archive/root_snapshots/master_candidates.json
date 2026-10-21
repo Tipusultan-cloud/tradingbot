@@ -1,0 +1,19 @@
+{
+  "generated_at": "2026-10-06T14:03:38.227782+00:00",
+  "iso_year": 2026,
+  "iso_week": 41,
+  "rules": {
+    "both_scanners_must_agree": true,
+    "minimum_setup_score": 95,
+    "minimum_volume_ratio": 1.2,
+    "rsi_range": [
+      50,
+      65
+    ],
+    "stock_must_beat_sector": true,
+    "sector_must_beat_spy": true,
+    "stock_must_beat_spy": true
+  },
+  "approved": [],
+  "rejected": []
+}

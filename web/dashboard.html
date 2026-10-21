@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b1220">
+  <title>TradingBot by Sultan</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0b1220;
+      color: #e6edf7;
+      font-synthesis: none;
+      text-rendering: optimizeLegibility;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-width: 320px; background: radial-gradient(ellipse at 80% -20%, #1b3150 0, transparent 48%), #0b1220; }
+    .shell { width: min(1240px, calc(100% - 40px)); margin: 0 auto; padding: 30px 0 48px; }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding-bottom: 28px; border-bottom: 1px solid #243248; }
+    .brand { display: flex; align-items: center; gap: 13px; }
+    .brand-mark { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 13px; background: #173d3a; color: #64e1b5; font-weight: 800; letter-spacing: -.04em; }
+    h1 { margin: 0; font-size: 17px; letter-spacing: -.02em; }
+    .subtitle, .muted { color: #8fa0b8; }
+    .subtitle { margin-top: 4px; font-size: 12px; }
+    .connection { display: flex; align-items: center; gap: 8px; color: #a8b5c8; font-size: 12px; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #43d8a4; box-shadow: 0 0 12px #43d8a455; }
+    .dot.degraded { background: #f5b942; box-shadow: 0 0 12px #f5b94255; }
+    .intro { display: flex; justify-content: space-between; align-items: end; gap: 20px; padding: 32px 0 22px; }
+    .eyebrow { color: #61dcb1; text-transform: uppercase; font-size: 10px; font-weight: 750; letter-spacing: .14em; }
+    h2 { margin: 8px 0 0; font-size: clamp(24px, 4vw, 32px); letter-spacing: -.04em; }
+    .refresh { color: #8fa0b8; font-size: 12px; text-align: right; }
+    .refresh-controls { display: flex; align-items: center; justify-content: end; gap: 12px; }
+    .refresh-button { display: inline-flex; align-items: center; gap: 7px; border: 1px solid #33445d; border-radius: 9px; padding: 8px 11px; background: #152338; color: #c9d5e5; font: inherit; font-size: 11px; cursor: pointer; }
+    .refresh-button:hover:not(:disabled) { border-color: #61dcb1; color: #75e2bf; }
+    .refresh-button:disabled { cursor: wait; opacity: .7; }
+    .refresh-button[aria-busy="true"] .refresh-icon { animation: rotate 1s linear infinite; }
+    @keyframes rotate { to { transform: rotate(360deg); } }
+    .grid { display: grid; gap: 14px; }
+    .metrics { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+    .panel { min-width: 0; border: 1px solid #243248; border-radius: 14px; background: linear-gradient(145deg, #121d2d, #101827); box-shadow: 0 12px 32px #00000012; }
+    .metric { padding: 18px 19px; }
+    .metric-label { color: #8fa0b8; font-size: 12px; }
+    .metric-value { margin-top: 12px; font-size: 26px; font-weight: 700; letter-spacing: -.035em; font-variant-numeric: tabular-nums; }
+    .metric-note { margin-top: 6px; color: #8292aa; font-size: 11px; }
+    .main-grid { grid-template-columns: minmax(0, 1.35fr) minmax(300px, .85fr); margin-top: 14px; }
+    .panel-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 17px 19px; border-bottom: 1px solid #243248; }
+    h3 { margin: 0; font-size: 13px; font-weight: 650; }
+    .panel-content { padding: 18px 19px; }
+    .market-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    .market-label { color: #91a0b6; font-size: 12px; }
+    .market-state { display: flex; align-items: center; gap: 10px; font-size: 20px; font-weight: 700; }
+    .market-state .badge { font-size: 10px; }
+    .market-return { color: #c2cede; font-size: 14px; font-variant-numeric: tabular-nums; }
+    .badge { padding: 5px 8px; border-radius: 999px; background: #1b302e; color: #65dfb5; font-weight: 700; letter-spacing: .04em; }
+    .badge.neutral { background: #302a1e; color: #f1c36a; }
+    .candidate { padding: 18px 19px; }
+    .candidate-top { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
+    .ticker { font-size: 27px; font-weight: 750; letter-spacing: -.04em; }
+    .candidate-sector { margin-top: 4px; color: #8fa0b8; font-size: 12px; }
+    .candidate-score { color: #7be2bd; font-size: 22px; font-weight: 700; }
+    .candidate-score small { color: #8092a9; font-size: 10px; font-weight: 500; }
+    .candidate-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 20px; padding-top: 15px; border-top: 1px solid #243248; }
+    .candidate-grid span { display: block; color: #8495ad; font-size: 10px; }
+    .candidate-grid strong { display: block; margin-top: 6px; font-size: 13px; font-variant-numeric: tabular-nums; }
+    .empty { color: #94a4b9; font-size: 13px; line-height: 1.6; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; white-space: nowrap; font-size: 12px; }
+    th { color: #8292aa; text-align: left; font-weight: 550; }
+    th, td { padding: 11px 9px; border-bottom: 1px solid #202d40; }
+    tbody tr:last-child td { border-bottom: 0; }
+    td { color: #d6deea; font-variant-numeric: tabular-nums; }
+    td:first-child { font-weight: 700; }
+    .lower-grid { grid-template-columns: minmax(0, 1.35fr) minmax(300px, .85fr); margin-top: 14px; }
+    .scan-list { display: grid; gap: 0; }
+    .scan-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid #202d40; font-size: 12px; }
+    .scan-item:last-child { border-bottom: 0; }
+    .scan-item span { color: #91a0b6; }
+    .scan-detail { display: flex; align-items: center; gap: 10px; }
+    .scan-item time { color: #d1dbea; font-variant-numeric: tabular-nums; }
+    .scan-state { min-width: 66px; padding: 4px 7px; border-radius: 999px; background: #1b302e; color: #65dfb5; text-align: center; font-size: 9px; font-weight: 750; letter-spacing: .05em; }
+    .scan-state.stale, .scan-state.unavailable { background: #302a1e; color: #f1c36a; }
+    .journal-summary { color: #8fa0b8; font-size: 11px; }
+    .download-link { border: 1px solid #33445d; border-radius: 8px; padding: 7px 10px; color: #c9d5e5; font-size: 11px; text-decoration: none; white-space: nowrap; }
+    .download-link:hover { border-color: #61dcb1; color: #75e2bf; }
+    .pnl-positive { color: #65dfb5; }
+    .pnl-negative { color: #ff8d91; }
+    .error { margin: 10px 0 0; color: #f3bf68; font-size: 12px; line-height: 1.5; }
+    footer { display: flex; justify-content: space-between; gap: 16px; padding-top: 20px; color: #73849d; font-size: 11px; line-height: 1.6; }
+    @media (max-width: 760px) {
+      .metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .main-grid, .lower-grid { grid-template-columns: 1fr; }
+      .shell { width: min(100% - 28px, 560px); padding-top: 20px; }
+    }
+    @media (max-width: 420px) {
+      header { align-items: start; }
+      .connection { font-size: 0; }
+      .intro { align-items: start; flex-direction: column; }
+      .refresh-controls { width: 100%; justify-content: space-between; }
+      .refresh { text-align: left; }
+      .metric { padding: 15px; }
+      .metric-value { font-size: 22px; }
+      .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">TB</div>
+        <div>
+          <h1>TradingBot by Sultan</h1>
+          <div class="subtitle">Swing strategy operations</div>
+        </div>
+      </div>
+      <div class="connection"><span id="health-dot" class="dot"></span><span id="health-label">Connecting</span></div>
+    </header>
+
+    <section class="intro">
+      <div><div class="eyebrow">Decision support · Paper-trading workflow</div><h2>Market overview</h2></div>
+      <div class="refresh-controls">
+        <div id="refresh-time" class="refresh">Loading latest scan…</div>
+        <button id="refresh-button" class="refresh-button" type="button" aria-busy="false">
+          <span class="refresh-icon" aria-hidden="true">↻</span><span>Refresh data</span>
+        </button>
+      </div>
+    </section>
+
+    <section class="grid metrics" aria-label="Scan metrics">
+      <article class="panel metric"><div class="metric-label">Monitored universe</div><div id="universe-count" class="metric-value">—</div><div class="metric-note">stocks in the current universe</div></article>
+      <article class="panel metric"><div class="metric-label">Technical setups</div><div id="technical-count" class="metric-value">—</div><div class="metric-note">passed the original scan</div></article>
+      <article class="panel metric"><div class="metric-label">Top-down setups</div><div id="topdown-count" class="metric-value">—</div><div class="metric-note">passed market and sector checks</div></article>
+      <article class="panel metric"><div class="metric-label">Master-approved</div><div id="approved-count" class="metric-value">—</div><div class="metric-note">current strict-rule candidates</div></article>
+      <article class="panel metric"><div class="metric-label">Open paper trades</div><div id="paper-open-count" class="metric-value">—</div><div class="metric-note">journaled, not broker orders</div></article>
+      <article class="panel metric"><div class="metric-label">Realized paper P&amp;L</div><div id="paper-realized-pnl" class="metric-value">—</div><div class="metric-note">closed journal trades only</div></article>
+    </section>
+
+    <section class="grid main-grid">
+      <article class="panel">
+        <div class="panel-head"><h3>Market regime</h3><span class="muted" style="font-size:11px">SPY · 20-day return</span></div>
+        <div id="market-panel" class="panel-content"><div class="empty">Waiting for scan data…</div></div>
+      </article>
+      <article class="panel">
+        <div class="panel-head"><h3>Best current opportunity</h3><span id="candidate-status" class="badge neutral">NO TRADE</span></div>
+        <div id="candidate-panel" class="candidate"><div class="empty">No qualifying candidate in the latest scan.</div></div>
+      </article>
+    </section>
+
+    <section class="grid lower-grid">
+      <article class="panel">
+        <div class="panel-head"><h3>Qualified setups</h3><span class="muted" style="font-size:11px">Top-down scan</span></div>
+        <div class="panel-content table-wrap">
+          <table><thead><tr><th>Ticker</th><th>Sector</th><th>Setup</th><th>Score</th><th>Volume</th></tr></thead><tbody id="setups-table"><tr><td colspan="5" class="empty">Loading scan results…</td></tr></tbody></table>
+        </div>
+      </article>
+      <article class="panel">
+        <div class="panel-head"><h3>Sector strength</h3><span class="muted" style="font-size:11px">20-day vs. SPY</span></div>
+        <div class="panel-content table-wrap">
+          <table><thead><tr><th>Sector</th><th>ETF</th><th>20D</th><th>vs. SPY</th></tr></thead><tbody id="sectors-table"><tr><td colspan="4" class="empty">Loading sector results…</td></tr></tbody></table>
+        </div>
+      </article>
+    </section>
+
+    <section class="grid lower-grid">
+      <article class="panel">
+        <div class="panel-head"><h3>Pipeline freshness</h3><span class="muted" style="font-size:11px">Latest artifact timestamps</span></div>
+        <div id="scan-times" class="panel-content scan-list"></div>
+      </article>
+      <article class="panel">
+        <div class="panel-head"><h3>System notes</h3><span class="muted" style="font-size:11px">Read-only dashboard</span></div>
+        <div class="panel-content">
+          <div id="system-notes" class="empty">No system warnings.</div>
+          <p class="empty">A setup score is not a win probability. No trade is placed automatically.</p>
+        </div>
+      </article>
+    </section>
+
+    <section class="grid" style="margin-top:14px">
+      <article class="panel">
+        <div class="panel-head"><h3>Open paper positions</h3><span id="open-position-summary" class="journal-summary">Paper only · stop risk is not automatically monitored</span></div>
+        <div class="panel-content table-wrap">
+          <table><thead><tr><th>Ticker</th><th>Opened</th><th>Entry</th><th>Shares</th><th>Stop</th><th>Target</th><th>Risk to stop</th></tr></thead><tbody id="open-trades-table"><tr><td colspan="7" class="empty">Loading open positions…</td></tr></tbody></table>
+        </div>
+      </article>
+    </section>
+    <section class="grid" style="margin-top:14px">
+      <article class="panel">
+        <div class="panel-head"><h3>Closed-trade history</h3><span id="journal-summary" class="journal-summary">TradingView-confirmed simulation only</span><a class="download-link" href="/api/paper-trades.csv">Download all trades (CSV)</a></div>
+        <div class="panel-content table-wrap">
+          <table><thead><tr><th>Ticker</th><th>Closed</th><th>Entry</th><th>Exit</th><th>Shares</th><th>Realized P&amp;L</th></tr></thead><tbody id="paper-trades-table"><tr><td colspan="6" class="empty">Loading trade history…</td></tr></tbody></table>
+        </div>
+      </article>
+    </section>
+
+    <footer><span>TradingBot · Internal operator dashboard</span><span>Market data and scans may be delayed. Use independent risk review.</span></footer>
+  </main>
+  <script>
+    const byId = (id) => document.getElementById(id);
+    const number = (value, digits = 0) => Number.isFinite(Number(value)) ? Number(value).toLocaleString(undefined, { maximumFractionDigits: digits }) : "—";
+    const date = (value) => {
+      if (!value) return "Not available";
+      const parsed = new Date(value);
+      return Number.isNaN(parsed.getTime()) ? "Invalid timestamp" : parsed.toLocaleString();
+    };
+    const cell = (row, value, tone) => {
+      const element = document.createElement("td");
+      element.textContent = value == null || value === "" ? "—" : String(value);
+      if (tone) element.className = tone;
+      row.appendChild(element);
+    };
+
+    function renderCandidate(data) {
+      const candidate = data.candidate;
+      const badge = byId("candidate-status");
+      const panel = byId("candidate-panel");
+      if (!candidate || typeof candidate !== "object") {
+        badge.textContent = data.candidate_status || "NO TRADE";
+        badge.className = "badge neutral";
+        panel.replaceChildren();
+        const message = document.createElement("div");
+        message.className = "empty";
+        message.textContent = data.candidate_status === "STALE DATA"
+          ? "The latest master selection is stale or unavailable. Rerun the scan before relying on a candidate."
+          : data.candidate_reason || "No stock currently meets every master-selection rule. Staying in cash is a valid decision.";
+        panel.appendChild(message);
+        return;
+      }
+      badge.textContent = "REVIEW REQUIRED";
+      badge.className = "badge";
+      panel.replaceChildren();
+      const top = document.createElement("div");
+      top.className = "candidate-top";
+      const identity = document.createElement("div");
+      const ticker = document.createElement("div");
+      ticker.className = "ticker";
+      ticker.textContent = candidate.ticker || "—";
+      const sector = document.createElement("div");
+      sector.className = "candidate-sector";
+      sector.textContent = candidate.sector || candidate.setup_type || "Qualified setup";
+      identity.append(ticker, sector);
+      const score = document.createElement("div");
+      score.className = "candidate-score";
+      score.textContent = number(candidate.setup_score);
+      const scoreLabel = document.createElement("small");
+      scoreLabel.textContent = " / 100";
+      score.appendChild(scoreLabel);
+      top.append(identity, score);
+      const details = document.createElement("div");
+      details.className = "candidate-grid";
+      for (const [label, value] of [
+        ["Entry", candidate.price == null ? "—" : `$${number(candidate.price, 2)}`],
+        ["RSI", number(candidate.rsi, 1)],
+        ["Volume", candidate.volume_ratio == null ? "—" : `${number(candidate.volume_ratio, 2)}×`],
+      ]) {
+        const item = document.createElement("div");
+        const caption = document.createElement("span");
+        caption.textContent = label;
+        const strong = document.createElement("strong");
+        strong.textContent = value;
+        item.append(caption, strong);
+        details.appendChild(item);
+      }
+      panel.append(top, details);
+    }
+
+    function renderRows(target, rows, fields, emptyMessage) {
+      const body = byId(target);
+      body.replaceChildren();
+      if (!Array.isArray(rows) || rows.length === 0) {
+        const row = document.createElement("tr");
+        const empty = document.createElement("td");
+        empty.colSpan = fields.length;
+        empty.className = "empty";
+        empty.textContent = emptyMessage;
+        row.appendChild(empty);
+        body.appendChild(row);
+        return;
+      }
+      for (const item of rows) {
+        const row = document.createElement("tr");
+        for (const field of fields) {
+          let value = item[field.key];
+          let tone = "";
+          if (field.format === "date" && value != null) value = date(value);
+          if (field.format === "score" && value != null) value = `${number(value)}/100`;
+          if (field.format === "ratio" && value != null) value = `${number(value, 2)}×`;
+          if (field.format === "percent" && value != null) value = `${number(value, 2)}%`;
+          if (["money", "pnl"].includes(field.format) && value != null) {
+            const amount = Number(value);
+            value = Number.isFinite(amount) ? `$${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—";
+            if (field.format === "pnl" && Number.isFinite(amount)) {
+              tone = amount > 0 ? "pnl-positive" : amount < 0 ? "pnl-negative" : "";
+            }
+          }
+          cell(row, value, tone);
+        }
+        body.appendChild(row);
+      }
+    }
+
+    function renderMarket(market) {
+      const panel = byId("market-panel");
+      panel.replaceChildren();
+      const row = document.createElement("div");
+      row.className = "market-row";
+      const summary = document.createElement("div");
+      const label = document.createElement("div");
+      label.className = "market-label";
+      label.textContent = market.ticker || "SPY";
+      const state = document.createElement("div");
+      state.className = "market-state";
+      state.textContent = market.bullish === true ? "Bullish" : market.bullish === false ? "Not bullish" : "Unavailable";
+      summary.append(label, state);
+      const result = document.createElement("div");
+      result.className = "market-return";
+      result.textContent = market.return_20 == null ? "—" : `${number(market.return_20, 2)}%`;
+      row.append(summary, result);
+      panel.appendChild(row);
+      const badge = document.createElement("span");
+      badge.className = `badge${market.bullish === true ? "" : " neutral"}`;
+      badge.textContent = market.bullish === true ? "RISK-ON" : "CAUTION";
+      state.appendChild(badge);
+    }
+
+    async function refresh() {
+      const refreshButton = byId("refresh-button");
+      const refreshLabel = refreshButton.querySelector("span:last-child");
+      refreshButton.disabled = true;
+      refreshButton.setAttribute("aria-busy", "true");
+      refreshLabel.textContent = "Refreshing";
+      try {
+        const response = await fetch("/api/dashboard", { cache: "no-store" });
+        if (!response.ok) throw new Error(`Dashboard request failed (${response.status})`);
+        const data = await response.json();
+        byId("health-dot").className = `dot${data.status === "ready" ? "" : " degraded"}`;
+        byId("health-label").textContent = data.status === "ready" ? "All scan data available" : "Data needs attention";
+        byId("universe-count").textContent = number(data.counts?.universe);
+        byId("technical-count").textContent = number(data.counts?.technical_setups);
+        byId("topdown-count").textContent = number(data.counts?.topdown_setups);
+        byId("approved-count").textContent = number(data.counts?.approved);
+        byId("paper-open-count").textContent = number(data.counts?.open_paper_trades);
+        const realizedPnl = Number(data.paper_trades?.summary?.realized_pnl);
+        byId("paper-realized-pnl").textContent = Number.isFinite(realizedPnl)
+          ? `$${realizedPnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+          : "—";
+        byId("journal-summary").textContent = `${number(data.paper_trades?.summary?.closed_trades)} closed · ${data.paper_trades?.summary?.win_rate == null ? "—" : `${number(data.paper_trades.summary.win_rate, 1)}%`} win rate · paper only`;
+        const openRisk = Number(data.paper_trades?.summary?.open_risk_at_stop);
+        byId("open-position-summary").textContent = `${Number.isFinite(openRisk) ? `$${openRisk.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} total risk to recorded stops` : "Risk unavailable"} · stops are not automatically monitored`;
+        byId("refresh-time").textContent = `Master selection · ${date(data.generated_at)}`;
+        renderMarket(data.market || {});
+        renderCandidate(data);
+        renderRows("setups-table", data.recent_setups, [
+          { key: "ticker" }, { key: "sector" }, { key: "setup_type" },
+          { key: "setup_score", format: "score" }, { key: "volume_ratio", format: "ratio" },
+        ], "No setups qualified in the latest scan.");
+        renderRows("sectors-table", data.sector_ranking, [
+          { key: "sector" }, { key: "etf" }, { key: "return_20", format: "percent" }, { key: "vs_spy_20", format: "percent" },
+        ], "Sector ranking is not available.");
+        renderRows("open-trades-table", data.paper_trades?.open, [
+          { key: "ticker" }, { key: "entry_time", format: "date" },
+          { key: "entry_price", format: "money" }, { key: "shares" },
+          { key: "stop_price", format: "money" }, { key: "target_price", format: "money" },
+          { key: "risk_at_stop", format: "money" },
+        ], "No open paper positions.");
+        const recentClosedTrades = Array.isArray(data.paper_trades?.recent)
+          ? data.paper_trades.recent.filter((trade) => trade.status === "CLOSED")
+          : [];
+        renderRows("paper-trades-table", recentClosedTrades, [
+          { key: "ticker" }, { key: "exit_time", format: "date" },
+          { key: "entry_price", format: "money" }, { key: "exit_price", format: "money" },
+          { key: "shares" }, { key: "realized_pnl", format: "pnl" },
+        ], "No closed paper trades recorded yet.");
+        const scans = data.scans || {};
+        byId("scan-times").replaceChildren();
+        for (const [label, value] of [["Universe", scans.universe], ["Technical scan", scans.technical], ["Top-down scan", scans.topdown], ["Master selection", scans.master], ["Current candidate", scans.candidate]]) {
+          const item = document.createElement("div");
+          item.className = "scan-item";
+          const name = document.createElement("span");
+          name.textContent = label;
+          const detail = document.createElement("div");
+          detail.className = "scan-detail";
+          const status = document.createElement("strong");
+          const scanStatus = value?.status || "unavailable";
+          status.className = `scan-state ${scanStatus}`;
+          status.textContent = scanStatus === "current" ? "CURRENT" : scanStatus === "stale" ? "STALE" : "MISSING";
+          const timestamp = document.createElement("time");
+          const age = Number(value?.age_hours);
+          const ageText = Number.isFinite(age) ? ` · ${age < 1 ? `${Math.round(age * 60)}m` : `${number(age, 1)}h`} ago` : "";
+          timestamp.textContent = `${date(value?.generated_at)}${ageText}`;
+          detail.append(status, timestamp);
+          item.append(name, detail);
+          byId("scan-times").appendChild(item);
+        }
+        const notes = byId("system-notes");
+        notes.replaceChildren();
+        if (data.errors?.length) {
+          for (const issue of data.errors) {
+            const warning = document.createElement("div");
+            warning.className = "error";
+            warning.textContent = `${issue.source}: ${issue.message}`;
+            notes.appendChild(warning);
+          }
+        } else {
+          notes.textContent = "All expected scan outputs are readable.";
+        }
+      } catch (error) {
+        byId("health-dot").className = "dot degraded";
+        byId("health-label").textContent = "Dashboard unavailable";
+        byId("system-notes").textContent = error instanceof Error ? error.message : "Could not load dashboard data.";
+      } finally {
+        refreshButton.disabled = false;
+        refreshButton.setAttribute("aria-busy", "false");
+        refreshLabel.textContent = "Refresh data";
+      }
+    }
+
+    byId("refresh-button").addEventListener("click", refresh);
+    refresh();
+    window.setInterval(refresh, 30000);
+  </script>
+</body>
+</html>

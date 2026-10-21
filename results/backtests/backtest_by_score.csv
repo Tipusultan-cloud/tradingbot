@@ -1,0 +1,4 @@
+score_band,total_trades,wins,losses,win_rate_pct,average_win_r,average_loss_r,expectancy_r,profit_factor,total_r,max_drawdown_r,average_holding_days
+70-79,60,22,38,36.67,1.762,-0.947,0.046,1.077,2.782,11.329,9.33
+80-89,1363,526,836,38.59,1.774,-1.008,0.066,1.107,90.163,77.926,9.11
+90-100,530,229,301,43.21,1.786,-0.984,0.213,1.38,112.671,43.753,9.08

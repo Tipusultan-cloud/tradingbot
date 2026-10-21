@@ -1,0 +1,2 @@
+strategy,start_date,end_date,starting_equity,ending_equity,total_return_pct,cagr_pct,max_drawdown_pct,total_trades,trades_per_year,win_rate_pct,average_win_r,average_loss_r,expectancy_r,profit_factor,average_holding_days,max_consecutive_losses,market_exposure_pct,spy_total_return_pct,spy_cagr_pct,spy_max_drawdown_pct
+CURRENT_CONTINUOUS,2019-10-07,2026-10-07,10000.0,13387.18,33.87,4.25,6.29,86,12.28,48.84,1.768,-0.974,0.365,1.703,9.52,4,41.65,193.06,16.6,33.72

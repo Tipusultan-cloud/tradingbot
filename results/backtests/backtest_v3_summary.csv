@@ -1,0 +1,5 @@
+test,total_trades,wins,losses,win_rate_pct,average_win_r,average_loss_r,expectancy_r,profit_factor,starting_equity,ending_equity,total_return_pct,cagr_pct,max_drawdown_pct,max_consecutive_losses,average_holding_days,skipped_signals,max_positions_seen,max_open_risk_pct_seen
+older_all_4of4,322,125,197,38.82,1.743,-0.993,0.069,1.113,10000.0,11729.38,17.29,3.84,26.0,14,9.2,915,4,3.045
+holdout_all_4of4,252,102,150,40.48,1.648,-1.003,0.07,1.049,10000.0,10567.03,5.67,2.03,11.79,12,9.79,824,4,3.027
+older_score_90_plus,184,71,113,38.59,1.689,-0.994,0.041,1.154,10000.0,11570.67,15.71,3.5,17.34,10,9.17,145,4,3.053
+holdout_score_90_plus,160,65,95,40.62,1.72,-1.009,0.099,1.192,10000.0,11731.49,17.31,5.98,14.42,10,9.54,129,4,3.034

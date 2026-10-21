@@ -1,0 +1,5 @@
+period,asset,start_date,end_date,starting_equity,ending_equity,total_return_pct,cagr_pct,max_drawdown_pct,annualized_volatility_pct,sharpe_ratio,sortino_ratio,calmar_ratio
+V3 Holdout 90+,TradingBot,2024-01-02,2026-10-02,10000.0,11731.49,17.31,5.98,14.42,8.76,0.501,0.544,0.415
+V3 Holdout 90+,SPY,2024-01-02,2026-10-02,10000.0,16816.39,68.16,20.81,18.76,12.9,1.076,1.185,1.11
+V3 Older 90+,TradingBot,2019-10-03,2023-12-29,10000.0,11570.67,15.71,3.5,17.34,7.55,0.352,0.346,0.202
+V3 Older 90+,SPY,2019-10-03,2023-12-29,10000.0,17514.88,75.15,14.14,33.72,18.31,0.59,0.6,0.419

@@ -1,0 +1,13 @@
+environment        = "dev"
+location           = "eastus2"
+resource_group_name = "tradingbot-dev-rg"
+vm_size             = "Standard_B2ms"
+vm_admin_username   = "tradingbotadmin"
+admin_source_cidr   = "203.0.113.10/32"
+vnet_address_space = "10.42.0.0/16"
+subnet_address_prefix = "10.42.1.0/24"
+data_disk_size_gb   = 64
+
+tags = {
+  owner = "replace-with-your-name"
+}

@@ -1,0 +1,5 @@
+period,filter,total_trades,wins,losses,win_rate_pct,expectancy_r,profit_factor,ending_equity,total_return_pct,max_drawdown_pct,avg_holding_days
+older,all_4of4,316,123,193,38.92,0.083,1.162,12740.97,27.41,23.87,9.47
+holdout_style,all_4of4,256,103,153,40.23,0.068,1.012,10149.55,1.5,14.66,9.48
+older,score_90_plus,182,76,106,41.76,0.157,1.196,12070.59,20.71,19.36,9.16
+holdout_style,score_90_plus,155,69,86,44.52,0.215,1.289,12465.14,24.65,14.25,9.94

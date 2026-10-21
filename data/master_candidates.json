@@ -1,0 +1,30 @@
+{
+  "generated_at": "2026-10-21T04:44:02.914941+00:00",
+  "strategy": "STRICT_DUAL_CURRENT_BEST_OPPORTUNITY",
+  "market_bullish": false,
+  "rules": {
+    "both_scanners_must_agree": true,
+    "minimum_setup_score": 95,
+    "ema20_reclaim": {
+      "minimum_volume_ratio": 1.2,
+      "rsi_range": [
+        50,
+        65
+      ]
+    },
+    "momentum_breakout": {
+      "minimum_volume_ratio": 1.5,
+      "rsi_range": [
+        55,
+        65
+      ]
+    },
+    "stock_must_beat_sector": true,
+    "sector_must_beat_spy": true,
+    "stock_must_beat_spy": true,
+    "weekly_lock": false
+  },
+  "best_current": null,
+  "approved": [],
+  "rejected": []
+}
