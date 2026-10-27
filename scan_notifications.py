@@ -69,9 +69,24 @@ def build_scan_message():
     score = candidate.get("setup_score", "n/a")
     price = candidate.get("price")
     price_text = f" Entry reference ${float(price):.2f}." if price else ""
+    earnings = candidate.get("earnings")
+    earnings_text = (
+        f" Earnings check {earnings.get('status', 'UNKNOWN')}: "
+        f"{earnings.get('detail', '')}"
+        if isinstance(earnings, dict)
+        else ""
+    )
+    news = candidate.get("news")
+    news_text = (
+        f" News check {news.get('status', 'UNKNOWN')}: "
+        f"{news.get('detail', '')}"
+        if isinstance(news, dict)
+        else ""
+    )
     return (
         f"TradingBot scan: candidate {ticker} ({sector}), setup score "
-        f"{score}/100.{price_text} Review dashboard; this is not an order."
+        f"{score}/100.{price_text}{earnings_text}{news_text} "
+        "Review dashboard; this is not an order."
     )
 
 

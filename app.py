@@ -26,6 +26,7 @@ from paper_journal import (
     record_entry,
     record_exit,
 )
+from shadow_exits import get_shadow_comparison
 
 
 # ==========================================
@@ -408,6 +409,15 @@ def get_dashboard_data():
             "message": f"Could not load paper journal or CSV export: {exc}",
         })
 
+    try:
+        shadow_exits = get_shadow_comparison()
+    except (OSError, sqlite3.Error) as exc:
+        shadow_exits = {"trades": [], "totals": {}}
+        errors.append({
+            "source": "Shadow exits",
+            "message": f"Could not load shadow exit comparison: {exc}",
+        })
+
     return {
         "status": "degraded" if errors else "ready",
         "generated_at": master.get("generated_at"),
@@ -433,6 +443,7 @@ def get_dashboard_data():
         "sector_ranking": sector_ranking,
         "recent_setups": topdown_setups[:10],
         "paper_trades": paper_trades,
+        "shadow_exits": shadow_exits,
         "scans": scan_statuses,
         "errors": errors,
     }

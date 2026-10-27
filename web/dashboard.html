@@ -63,6 +63,8 @@
     .candidate-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 20px; padding-top: 15px; border-top: 1px solid #243248; }
     .candidate-grid span { display: block; color: #8495ad; font-size: 10px; }
     .candidate-grid strong { display: block; margin-top: 6px; font-size: 13px; font-variant-numeric: tabular-nums; }
+    .candidate-earnings { margin-top: 12px; color: #94a4b9; font-size: 12px; line-height: 1.5; }
+    .candidate-earnings.warning { color: #f1c36a; }
     .empty { color: #94a4b9; font-size: 13px; line-height: 1.6; }
     .table-wrap { overflow-x: auto; }
     table { width: 100%; border-collapse: collapse; white-space: nowrap; font-size: 12px; }
@@ -192,6 +194,14 @@
         </div>
       </article>
     </section>
+    <section class="grid" style="margin-top:14px">
+      <article class="panel">
+        <div class="panel-head"><h3>Exit comparison</h3><span id="shadow-summary" class="journal-summary">What each exit rule would have made on the same paper trades · updated after each daily scan</span></div>
+        <div class="panel-content table-wrap">
+          <table><thead><tr><th>Ticker</th><th>Opened</th><th>TradingView exit</th><th>2R or 20 days</th><th>Half at 2R, trail rest</th></tr></thead><tbody id="shadow-table"><tr><td colspan="5" class="empty">Loading exit comparison…</td></tr></tbody></table>
+        </div>
+      </article>
+    </section>
 
     <footer><span>TradingBot · Internal operator dashboard</span><span>Market data and scans may be delayed. Use independent risk review.</span></footer>
   </main>
@@ -261,7 +271,19 @@
         item.append(caption, strong);
         details.appendChild(item);
       }
-      panel.append(top, details);
+      const earnings = document.createElement("div");
+      const earningsInfo = candidate.earnings && typeof candidate.earnings === "object" ? candidate.earnings : null;
+      earnings.className = earningsInfo && earningsInfo.status === "CLEAR" ? "candidate-earnings" : "candidate-earnings warning";
+      earnings.textContent = earningsInfo
+        ? `Earnings check ${earningsInfo.status}: ${earningsInfo.detail || ""}`
+        : "Earnings check not available for this selection.";
+      const news = document.createElement("div");
+      const newsInfo = candidate.news && typeof candidate.news === "object" ? candidate.news : null;
+      news.className = newsInfo && newsInfo.status === "CLEAR" ? "candidate-earnings" : "candidate-earnings warning";
+      news.textContent = newsInfo
+        ? `News check ${newsInfo.status}: ${newsInfo.detail || ""}`
+        : "News check not available for this selection.";
+      panel.append(top, details, earnings, news);
     }
 
     function renderRows(target, rows, fields, emptyMessage) {
@@ -286,6 +308,12 @@
           if (field.format === "score" && value != null) value = `${number(value)}/100`;
           if (field.format === "ratio" && value != null) value = `${number(value, 2)}×`;
           if (field.format === "percent" && value != null) value = `${number(value, 2)}%`;
+          if (field.format === "r") {
+            const r = Number(value);
+            const status = field.statusKey ? item[field.statusKey] : "CLOSED";
+            value = value == null || !Number.isFinite(r) ? (status === "OPEN" ? "open" : "—") : `${r > 0 ? "+" : ""}${number(r, 2)}R${status === "OPEN" ? " (open)" : ""}`;
+            if (Number.isFinite(r) && value !== "—") tone = r > 0 ? "pnl-positive" : r < 0 ? "pnl-negative" : "";
+          }
           if (["money", "pnl"].includes(field.format) && value != null) {
             const amount = Number(value);
             value = Number.isFinite(amount) ? `$${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—";
@@ -371,6 +399,19 @@
           { key: "entry_price", format: "money" }, { key: "exit_price", format: "money" },
           { key: "shares" }, { key: "realized_pnl", format: "pnl" },
         ], "No closed paper trades recorded yet.");
+        renderRows("shadow-table", data.shadow_exits?.trades, [
+          { key: "ticker" }, { key: "entry_time", format: "date" },
+          { key: "actual_r", format: "r", statusKey: "actual_status" },
+          { key: "RULE_2R_20D_r", format: "r", statusKey: "RULE_2R_20D_status" },
+          { key: "HALF_2R_TRAIL_r", format: "r", statusKey: "HALF_2R_TRAIL_status" },
+        ], "No paper trades to compare yet.");
+        const shadowTotals = data.shadow_exits?.totals || {};
+        const totalText = (label, total) => total ? `${label} ${total.total_r >= 0 ? "+" : ""}${number(total.total_r, 2)}R (${number(total.closed)} closed)` : `${label} —`;
+        byId("shadow-summary").textContent = [
+          totalText("TradingView", shadowTotals.ACTUAL),
+          totalText("2R/20d", shadowTotals.RULE_2R_20D),
+          totalText("Half+trail", shadowTotals.HALF_2R_TRAIL),
+        ].join(" · ");
         const scans = data.scans || {};
         byId("scan-times").replaceChildren();
         for (const [label, value] of [["Universe", scans.universe], ["Technical scan", scans.technical], ["Top-down scan", scans.topdown], ["Master selection", scans.master], ["Current candidate", scans.candidate]]) {

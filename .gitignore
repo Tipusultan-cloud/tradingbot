@@ -19,3 +19,4 @@ infra/terraform/*.tfplan
 infra/terraform/tfplan
 infra/terraform/crash.log
 infra/terraform/crash.*.log
+results/backtests/*.pkl

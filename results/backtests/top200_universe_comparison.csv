@@ -1,0 +1,7 @@
+period_type,strategy,start_date,end_date,total_trades,trades_from_added_stocks,win_rate_pct,average_win_r,average_loss_r,expectancy_r,profit_factor,total_return_pct,cagr_pct,max_drawdown_pct,max_consecutive_losses,average_holding_days,market_exposure_pct,spy_total_return_pct
+DEVELOPMENT,SP500,2019-10-28,2024-10-25,62,0,45.16,1.727,-0.963,0.252,1.481,15.8,2.98,5.45,4,9.53,42.05,106.24
+DEVELOPMENT,SP500_TOP200,2019-10-28,2024-10-25,62,24,43.55,1.779,-0.975,0.224,1.39,13.67,2.6,5.96,5,8.73,38.08,106.24
+HOLDOUT,SP500,2024-10-28,2026-10-27,27,0,51.85,1.729,-1.024,0.403,1.71,10.05,4.92,5.27,4,8.74,41.72,35.53
+HOLDOUT,SP500_TOP200,2024-10-28,2026-10-27,36,14,36.11,1.93,-1.047,0.028,1.078,1.82,0.91,6.77,6,7.5,46.71,35.53
+FULL,SP500,2019-10-28,2026-10-27,89,0,47.19,1.79,-0.98,0.327,1.631,31.47,3.99,5.45,4,9.33,42.13,180.38
+FULL,SP500_TOP200,2019-10-28,2026-10-27,98,38,42.86,1.848,-1.005,0.218,1.364,22.56,2.95,7.32,6,8.39,41.16,180.38

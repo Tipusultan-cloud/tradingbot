@@ -53,6 +53,13 @@ try {
     }
 
     Write-Host ""
+    Write-Host "Updating shadow exit comparison for paper trades..."
+    & $Python ".\shadow_exits.py"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning "Shadow exit update failed; the scan result is unaffected."
+    }
+
+    Write-Host ""
     Write-Host "Sending scan summary email if configured..."
     & $Python ".\scan_notifications.py"
     if ($LASTEXITCODE -ne 0) {

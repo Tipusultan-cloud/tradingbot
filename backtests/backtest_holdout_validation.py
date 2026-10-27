@@ -800,7 +800,8 @@ def calculate_setup_score(
 def get_daily_best_candidate(
     date_value,
     daily_stocks,
-    sector_state
+    sector_state,
+    exclude_tickers=frozenset()
 ):
     if (
         sector_state is None
@@ -1171,6 +1172,14 @@ def get_daily_best_candidate(
                 stock_vs_spy
             ),
         })
+
+    # Applied after the universe is built so excluded stocks
+    # still count toward the universe percentile ranks.
+    candidates = [
+        stock
+        for stock in candidates
+        if stock["ticker"] not in exclude_tickers
+    ]
 
     if not candidates:
         return None

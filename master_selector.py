@@ -2,6 +2,15 @@ import json
 import math
 from datetime import datetime, timezone
 
+from earnings_calendar import (
+    EARNINGS_WARNING_TRADING_DAYS,
+    check_earnings,
+)
+from news_checker import (
+    NEWS_LOOKBACK_TRADING_DAYS,
+    STATUS_BAD_NEWS,
+    check_news,
+)
 from project_paths import (
     DATA_DIR,
     QUALIFIED_SETUPS_JSON,
@@ -403,6 +412,28 @@ def main():
                     "Stock is not outperforming SPY"
                 )
 
+            # Only look up earnings for stocks that passed every
+            # technical rule; this is a network call per ticker.
+            # Warning only: a hard block lowered backtest returns.
+            earnings = None
+            news = None
+
+            if not reasons:
+                earnings = check_earnings(
+                    ticker
+                )
+
+                # Bad news blocks the trade; a failed lookup
+                # (UNKNOWN) only warns.
+                news = check_news(
+                    ticker
+                )
+
+                if news["status"] == STATUS_BAD_NEWS:
+                    reasons.append(
+                        news["detail"]
+                    )
+
             candidate = {
                 "ticker": ticker,
 
@@ -492,6 +523,10 @@ def main():
                 "topdown_scanner": "PASS",
                 "market": "PASS",
                 "sector_trend": "PASS",
+
+                "earnings": earnings,
+
+                "news": news,
             }
 
             if reasons:
@@ -584,6 +619,12 @@ def main():
 
             "stock_must_beat_spy":
                 REQUIRE_STOCK_BEATS_SPY,
+
+            "earnings_warning_trading_days":
+                EARNINGS_WARNING_TRADING_DAYS,
+
+            "bad_news_block_lookback_trading_days":
+                NEWS_LOOKBACK_TRADING_DAYS,
 
             "weekly_lock":
                 False
@@ -731,6 +772,28 @@ def main():
     print("Top-Down Scanner: PASS")
     print("SPY Market: PASS")
     print("Sector Trend: PASS")
+
+    earnings = selected.get(
+        "earnings"
+    ) or {}
+
+    print(
+        "Earnings:",
+        earnings.get("status", "UNKNOWN"),
+        "-",
+        earnings.get("detail", "")
+    )
+
+    news = selected.get(
+        "news"
+    ) or {}
+
+    print(
+        "News:",
+        news.get("status", "UNKNOWN"),
+        "-",
+        news.get("detail", "")
+    )
 
     print()
 

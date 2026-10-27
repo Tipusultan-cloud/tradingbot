@@ -1,5 +1,6 @@
 import json
 import math
+import os
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from io import StringIO
@@ -7,10 +8,15 @@ from urllib.request import Request, urlopen
 
 import pandas as pd
 import yfinance as yf
+from dotenv import load_dotenv
 
 from project_paths import (
     TOP_200_JSON,
     TOP_200_CSV
+)
+from us_market_universe import (
+    build_sp500_top_traded_constituents,
+    build_us_market_constituents,
 )
 
 
@@ -536,17 +542,20 @@ def rank_sectors():
 
 def build_stock_metrics(
     constituents,
-    sector_ranking
+    sector_ranking,
+    frames=None
 ):
 
-    tickers = constituents[
-        "ticker"
-    ].tolist()
+    # frames: optional ticker -> daily bars already downloaded.
+    if frames is None:
+        tickers = constituents[
+            "ticker"
+        ].tolist()
 
-    data = download_market_data(
-        tickers,
-        period="1y"
-    )
+        data = download_market_data(
+            tickers,
+            period="1y"
+        )
 
     sector_lookup = (
         sector_ranking
@@ -573,10 +582,16 @@ def build_stock_metrics(
         company = row.company
         sector = row.sector
 
-        df = extract_symbol(
-            data,
-            ticker
-        )
+        if frames is None:
+            df = extract_symbol(
+                data,
+                ticker
+            )
+        else:
+            df = frames.get(
+                ticker,
+                pd.DataFrame()
+            )
 
         if len(df) < 201:
             continue
@@ -1087,15 +1102,66 @@ def save_outputs(
     )
 
 
+def load_source_universe():
+    """S&P 500 by default; see .env.example for UNIVERSE_SOURCE options."""
+
+    sp500 = load_sp500_constituents()
+
+    source = os.getenv(
+        "UNIVERSE_SOURCE",
+        "SP500"
+    ).strip().upper()
+
+    if source == "SP500":
+        return sp500, None
+
+    download = lambda batch: download_market_data(
+        batch,
+        period="1y"
+    )
+
+    if source == "SP500_TOP200":
+        print()
+        print("================================")
+        print("ADDING 200 MOST-TRADED US STOCKS")
+        print("================================")
+
+        return build_sp500_top_traded_constituents(
+            sp500=sp500,
+            download=download,
+            extract=extract_symbol
+        )
+
+    if source != "US_ALL":
+        raise RuntimeError(
+            f"Unknown UNIVERSE_SOURCE {source!r}; "
+            "use SP500, SP500_TOP200 or US_ALL."
+        )
+
+    print()
+    print("================================")
+    print("LOADING ALL US-LISTED STOCKS")
+    print("================================")
+
+    return build_us_market_constituents(
+        sp500=sp500,
+        download=download,
+        extract=extract_symbol
+    )
+
+
 def main():
 
-    constituents = load_sp500_constituents()
+    load_dotenv()
+
+    constituents, frames = load_source_universe()
 
     sector_ranking = rank_sectors()
 
     stocks = build_stock_metrics(
         constituents=constituents,
-        sector_ranking=sector_ranking
+        sector_ranking=sector_ranking,
+        frames=frames
     )
 
     stocks = add_universe_scores(

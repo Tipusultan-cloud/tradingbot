@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-21T04:44:02.914941+00:00",
+  "generated_at": "2026-10-27T15:20:37.574500+00:00",
   "strategy": "STRICT_DUAL_CURRENT_BEST_OPPORTUNITY",
   "market_bullish": false,
   "rules": {
@@ -22,6 +22,8 @@
     "stock_must_beat_sector": true,
     "sector_must_beat_spy": true,
     "stock_must_beat_spy": true,
+    "earnings_warning_trading_days": 5,
+    "bad_news_block_lookback_trading_days": 3,
     "weekly_lock": false
   },
   "best_current": null,

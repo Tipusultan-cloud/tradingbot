@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-21T04:43:54.853492+00:00",
+  "generated_at": "2026-10-27T15:20:28.945197+00:00",
   "strategy": "STRICT_DUAL_DYNAMIC_200",
   "universe_size": 200,
   "rules": {
@@ -23,7 +23,7 @@
   "market": {
     "ticker": "SPY",
     "bullish": false,
-    "return_20": -0.56
+    "return_20": -0.03
   },
   "qualified": [],
   "watch": [],
