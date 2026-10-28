@@ -149,6 +149,15 @@
       </article>
     </section>
 
+    <section class="grid" style="margin-top:14px">
+      <article class="panel">
+        <div class="panel-head"><h3>Trade slots</h3><span id="slot-summary" class="journal-summary">A+ pick first, then leader pullbacks · paper only</span></div>
+        <div class="panel-content table-wrap">
+          <table><thead><tr><th>Slot</th><th>Ticker</th><th>Strategy</th><th>Entry ref.</th><th>Stop</th><th>Target</th><th>Shares</th><th>Why</th><th>Checks</th></tr></thead><tbody id="slots-table"><tr><td colspan="9" class="empty">Loading slot selection…</td></tr></tbody></table>
+        </div>
+      </article>
+    </section>
+
     <section class="grid lower-grid">
       <article class="panel">
         <div class="panel-head"><h3>Qualified setups</h3><span class="muted" style="font-size:11px">Top-down scan</span></div>
@@ -182,7 +191,7 @@
       <article class="panel">
         <div class="panel-head"><h3>Open paper positions</h3><span id="open-position-summary" class="journal-summary">Paper only · stop risk is not automatically monitored</span></div>
         <div class="panel-content table-wrap">
-          <table><thead><tr><th>Ticker</th><th>Opened</th><th>Entry</th><th>Shares</th><th>Stop</th><th>Target</th><th>Risk to stop</th></tr></thead><tbody id="open-trades-table"><tr><td colspan="7" class="empty">Loading open positions…</td></tr></tbody></table>
+          <table><thead><tr><th>Ticker</th><th>Strategy</th><th>Opened</th><th>Entry</th><th>Shares</th><th>Stop</th><th>Target</th><th>Risk to stop</th></tr></thead><tbody id="open-trades-table"><tr><td colspan="8" class="empty">Loading open positions…</td></tr></tbody></table>
         </div>
       </article>
     </section>
@@ -327,6 +336,45 @@
       }
     }
 
+    const strategyLabel = (source) => source === "A_PLUS" ? "A+ (current bot)" : source === "PULLBACK" ? "Leader pullback" : source || "—";
+
+    function renderSlots(slots) {
+      const openCount = Array.isArray(slots.open_positions) ? slots.open_positions.length : 0;
+      const status = slots.status || "UNAVAILABLE";
+      const notes = Array.isArray(slots.warnings) && slots.warnings.length ? ` · ${slots.warnings.join(" ")}` : "";
+      byId("slot-summary").textContent = `${status} · ${number(openCount)} of ${number(slots.max_slots)} slots open · A+ first, then leader pullbacks · paper only${notes}`;
+      const rows = (slots.selections || []).map((stock) => {
+        const risk = stock.risk_preview || {};
+        const checks = [stock.earnings, stock.news]
+          .filter((check) => check && typeof check === "object")
+          .map((check) => check.status || "UNKNOWN")
+          .join(" / ");
+        return {
+          slot: stock.slot,
+          ticker: stock.ticker,
+          strategy: strategyLabel(stock.source),
+          entry: risk.entry_reference,
+          stop: risk.stop,
+          target: risk.target,
+          shares: risk.shares,
+          why: stock.source === "PULLBACK"
+            ? `6M ${number(stock.return_6m, 1)}% · 5D ${number(stock.return_5d, 1)}%`
+            : `Setup ${number(stock.setup_score)}/100`,
+          checks: checks ? `Earnings / news: ${checks}` : "—",
+        };
+      });
+      const empty = status === "ALL SLOTS FULL"
+        ? "All slots are in use. A new stock is picked when a paper trade closes."
+        : status === "STALE DATA"
+          ? "Slot selection is stale or unavailable. Rerun the scan before relying on it."
+          : "No A+ pick or leader pullback today. Staying in cash is a valid decision.";
+      renderRows("slots-table", rows, [
+        { key: "slot" }, { key: "ticker" }, { key: "strategy" },
+        { key: "entry", format: "money" }, { key: "stop", format: "money" }, { key: "target", format: "money" },
+        { key: "shares" }, { key: "why" }, { key: "checks" },
+      ], empty);
+    }
+
     function renderMarket(market) {
       const panel = byId("market-panel");
       panel.replaceChildren();
@@ -378,6 +426,7 @@
         byId("refresh-time").textContent = `Master selection · ${date(data.generated_at)}`;
         renderMarket(data.market || {});
         renderCandidate(data);
+        renderSlots(data.slots || {});
         renderRows("setups-table", data.recent_setups, [
           { key: "ticker" }, { key: "sector" }, { key: "setup_type" },
           { key: "setup_score", format: "score" }, { key: "volume_ratio", format: "ratio" },
@@ -385,8 +434,11 @@
         renderRows("sectors-table", data.sector_ranking, [
           { key: "sector" }, { key: "etf" }, { key: "return_20", format: "percent" }, { key: "vs_spy_20", format: "percent" },
         ], "Sector ranking is not available.");
-        renderRows("open-trades-table", data.paper_trades?.open, [
-          { key: "ticker" }, { key: "entry_time", format: "date" },
+        const openTrades = Array.isArray(data.paper_trades?.open)
+          ? data.paper_trades.open.map((trade) => ({ ...trade, strategy_label: strategyLabel(trade.strategy) }))
+          : [];
+        renderRows("open-trades-table", openTrades, [
+          { key: "ticker" }, { key: "strategy_label" }, { key: "entry_time", format: "date" },
           { key: "entry_price", format: "money" }, { key: "shares" },
           { key: "stop_price", format: "money" }, { key: "target_price", format: "money" },
           { key: "risk_at_stop", format: "money" },
@@ -414,7 +466,7 @@
         ].join(" · ");
         const scans = data.scans || {};
         byId("scan-times").replaceChildren();
-        for (const [label, value] of [["Universe", scans.universe], ["Technical scan", scans.technical], ["Top-down scan", scans.topdown], ["Master selection", scans.master], ["Current candidate", scans.candidate]]) {
+        for (const [label, value] of [["Universe", scans.universe], ["Technical scan", scans.technical], ["Top-down scan", scans.topdown], ["Master selection", scans.master], ["Current candidate", scans.candidate], ["Pullback scan", scans.pullback], ["Slot selection", scans.slots]]) {
           const item = document.createElement("div");
           item.className = "scan-item";
           const name = document.createElement("span");

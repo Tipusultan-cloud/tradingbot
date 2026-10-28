@@ -52,6 +52,17 @@ try {
         throw "master_selector.py failed with exit code $LASTEXITCODE"
     }
 
+    # A failed pullback scan leaves only the A+ pick for the slots.
+    & $Python ".\scanner_pullback.py"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning "Pullback scan failed; slots will use the A+ pick only."
+    }
+
+    & $Python ".\slot_selector.py"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning "Slot selection failed; pullback BUY alerts will be rejected."
+    }
+
     Write-Host ""
     Write-Host "Updating shadow exit comparison for paper trades..."
     & $Python ".\shadow_exits.py"

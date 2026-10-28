@@ -78,6 +78,14 @@ Run the stages in sequence. Each stage uses output from the preceding stage:
    `data/qualified_setups_topdown.json`.
 4. `master_selector.py` compares scanner results and writes
    `data/master_candidates.json` and `data/best_current_candidate.json`.
+5. `scanner_pullback.py` finds S&P 500 leaders (top 20% by 6-month return,
+   in an uptrend) that fell more than 5% this week and writes
+   `data/pullback_setups.json`.
+6. `slot_selector.py` fills free paper-trade slots (`MAX_OPEN_TRADES`,
+   default 2) with the A+ pick first, then pullbacks, and writes
+   `data/slot_selection.json`.
+
+Stages 5 and 6 only warn on failure; the A+ pipeline is unaffected.
 
 The scheduled runner is `scripts/scheduled_daily_scan.ps1`. The root-level
 `scheduled_daily_scan.ps1` is kept as a compatibility entry point for
@@ -94,6 +102,8 @@ To run the stages manually:
 .\.venv\Scripts\python.exe -u .\scanner.py
 .\.venv\Scripts\python.exe -u .\scanner_topdown.py
 .\.venv\Scripts\python.exe -u .\master_selector.py
+.\.venv\Scripts\python.exe -u .\scanner_pullback.py
+.\.venv\Scripts\python.exe -u .\slot_selector.py
 ```
 
 ## 5. Review the decision
@@ -102,9 +112,13 @@ To run the stages manually:
 2. Check `data/best_current_candidate.json` for the latest WAIT or candidate
    decision.
 3. Check `data/master_candidates.json` for approved and rejected candidates.
-4. A zero-candidate result is valid: the decision is **NO TRADE**.
-5. Confirm data is fresh before relying on it. The webhook rejects missing or
-   stale scanner/master outputs.
+4. Check the dashboard's **Trade slots** panel (or
+   `data/slot_selection.json`) for the stocks picked for free slots, with
+   entry reference, stop, target, and shares.
+5. A zero-candidate result is valid: the decision is **NO TRADE**.
+6. Confirm data is fresh before relying on it. The webhook rejects missing or
+   stale scanner/master/slot outputs, and rejects any BUY while all slots
+   hold open paper trades.
 
 The master selector currently chooses a best current candidate, not a
 persistent one-trade-per-week choice. Its `weekly_lock` is disabled; daily
@@ -119,7 +133,11 @@ scans can replace the candidate.
 4. Send the secret, ticker, action, price, and ATR fields in the expected JSON
    alert body. Use the same secret configured in `.env`.
 5. A BUY signal is only confirmed if the ticker is in fresh original scanner
-   output and is the current master selection. A confirmed BUY is recorded as
+   output and is the current master selection, or is a pullback pick in the
+   fresh slot selection, and a slot is free. A pullback paper trade is only
+   recorded if a BUY alert arrives for that ticker, so set a TradingView
+   alert (or send the same JSON) for each slot pick you want to follow.
+   A confirmed BUY is recorded as
    a paper position in `data/paper_trades.sqlite3`; a TradingView SELL closes
    it and saves realized P&L. No live order is placed. This journal uses the
    alert price and does not automatically execute or check stops/targets.

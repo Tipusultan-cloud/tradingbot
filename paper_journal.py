@@ -28,6 +28,7 @@ TRADE_CSV_FIELDS = (
     "exit_price",
     "realized_pnl",
     "exit_reason",
+    "strategy",
 )
 
 
@@ -88,10 +89,18 @@ def initialize_journal(database_path=None):
                 exit_time TEXT,
                 exit_price REAL,
                 realized_pnl REAL,
-                exit_reason TEXT
+                exit_reason TEXT,
+                strategy TEXT
             )
             """
         )
+        columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(paper_trades)")
+        }
+        if "strategy" not in columns:
+            # Journals created before strategy tracking.
+            connection.execute("ALTER TABLE paper_trades ADD COLUMN strategy TEXT")
         connection.execute(
             """
             CREATE UNIQUE INDEX IF NOT EXISTS one_open_paper_trade_per_ticker
@@ -160,7 +169,8 @@ def export_paper_trades_csv(database_path=None, export_path=None):
                 """
                 SELECT id, ticker, entry_time, entry_price, atr, shares,
                        stop_price, target_price, setup_score, status,
-                       exit_time, exit_price, realized_pnl, exit_reason
+                       exit_time, exit_price, realized_pnl, exit_reason,
+                       strategy
                 FROM paper_trades
                 ORDER BY id
                 """
@@ -205,6 +215,7 @@ def record_entry(
     setup_score=None,
     entry_time=None,
     database_path=None,
+    strategy=None,
 ):
     ticker = str(ticker).strip().upper()
     if not ticker:
@@ -247,8 +258,8 @@ def record_entry(
             """
             INSERT INTO paper_trades (
                 ticker, entry_time, entry_price, atr, shares, stop_price,
-                target_price, setup_score, status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'OPEN')
+                target_price, setup_score, status, strategy
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?)
             """,
             (
                 ticker,
@@ -262,6 +273,7 @@ def record_entry(
                 stop_price,
                 target_price,
                 float(setup_score) if setup_score is not None else None,
+                strategy,
             ),
         )
         trade = dict(connection.execute(
@@ -320,6 +332,14 @@ def record_exit(ticker, exit_price, exit_time=None, database_path=None):
     except PaperTradeExportError:
         raise
     return closed_trade
+
+
+def count_open_trades(database_path=None):
+    initialize_journal(database_path)
+    with _connection(database_path) as connection:
+        return connection.execute(
+            "SELECT COUNT(*) FROM paper_trades WHERE status = 'OPEN'"
+        ).fetchone()[0]
 
 
 def get_paper_trades(limit=25, database_path=None):

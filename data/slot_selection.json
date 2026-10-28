@@ -1,0 +1,97 @@
+{
+  "generated_at": "2026-10-28T20:11:56.091110+00:00",
+  "strategy": "A_PLUS_THEN_LEADER_PULLBACK",
+  "status": "SLOTS TO FILL",
+  "max_slots": 2,
+  "open_positions": [],
+  "free_slots": 2,
+  "selections": [
+    {
+      "ticker": "MRNA",
+      "company": "Moderna",
+      "sector": "Health Care",
+      "setup_type": "LEADER_PULLBACK",
+      "signal_date": "2026-10-27",
+      "pullback_rank": 1,
+      "price": 207.97,
+      "atr": 24.2298,
+      "return_6m": 341.18,
+      "return_5d": -14.09,
+      "leader_percentile": 100.0,
+      "ema20": 207.21,
+      "ema50": 175.47,
+      "sma200": 83.86,
+      "source": "PULLBACK",
+      "slot": 1,
+      "risk_preview": {
+        "entry_reference": 207.97,
+        "atr": 24.23,
+        "stop": 171.63,
+        "target": 280.66,
+        "shares": 2,
+        "position_value": 415.94,
+        "max_risk": 100.0,
+        "planned_risk": 72.69,
+        "reward_risk": 2.0
+      },
+      "earnings": {
+        "status": "CLEAR",
+        "next_earnings_date": "2026-11-06",
+        "trading_days_until": 7,
+        "warning_trading_days": 5,
+        "detail": "Next earnings 2026-11-06 in 7 trading day(s)."
+      },
+      "news": {
+        "status": "UNKNOWN",
+        "lookback_trading_days": 3,
+        "articles_checked": 0,
+        "bad_headlines": [],
+        "detail": "News lookup failed: Alpaca API keys are not configured in .env (ALPACA_API_KEY / ALPACA_API_SECRET)."
+      }
+    },
+    {
+      "ticker": "MPC",
+      "company": "Marathon Petroleum",
+      "sector": "Energy",
+      "setup_type": "LEADER_PULLBACK",
+      "signal_date": "2026-10-27",
+      "pullback_rank": 2,
+      "price": 435.98,
+      "atr": 19.2429,
+      "return_6m": 88.68,
+      "return_5d": -8.22,
+      "leader_percentile": 97.4,
+      "ema20": 450.42,
+      "ema50": 414.33,
+      "sma200": 285.57,
+      "source": "PULLBACK",
+      "slot": 2,
+      "risk_preview": {
+        "entry_reference": 435.98,
+        "atr": 19.24,
+        "stop": 407.12,
+        "target": 493.71,
+        "shares": 3,
+        "position_value": 1307.94,
+        "max_risk": 100.0,
+        "planned_risk": 86.59,
+        "reward_risk": 2.0
+      },
+      "earnings": {
+        "status": "EARNINGS_SOON",
+        "next_earnings_date": "2026-11-03",
+        "trading_days_until": 4,
+        "warning_trading_days": 5,
+        "detail": "Earnings on 2026-11-03 in 4 trading day(s). The trade may hold through the report; review gap risk."
+      },
+      "news": {
+        "status": "UNKNOWN",
+        "lookback_trading_days": 3,
+        "articles_checked": 0,
+        "bad_headlines": [],
+        "detail": "News lookup failed: Alpaca API keys are not configured in .env (ALPACA_API_KEY / ALPACA_API_SECRET)."
+      }
+    }
+  ],
+  "warnings": []
+}

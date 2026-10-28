@@ -1,0 +1,80 @@
+{
+  "generated_at": "2026-10-28T20:11:52.348939+00:00",
+  "strategy": "LEADER_PULLBACK",
+  "rules": {
+    "leader_lookback_bars": 126,
+    "leader_min_percentile": 80,
+    "pullback_lookback_bars": 5,
+    "pullback_max_return_pct": -5.0,
+    "trend": "Close > SMA200 and EMA20 > EMA50",
+    "ranking_universe": "S&P 500"
+  },
+  "stocks_ranked": 500,
+  "qualified_count": 4,
+  "qualified": [
+    {
+      "ticker": "MRNA",
+      "company": "Moderna",
+      "sector": "Health Care",
+      "setup_type": "LEADER_PULLBACK",
+      "signal_date": "2026-10-27",
+      "pullback_rank": 1,
+      "price": 207.97,
+      "atr": 24.2298,
+      "return_6m": 341.18,
+      "return_5d": -14.09,
+      "leader_percentile": 100.0,
+      "ema20": 207.21,
+      "ema50": 175.47,
+      "sma200": 83.86
+    },
+    {
+      "ticker": "MPC",
+      "company": "Marathon Petroleum",
+      "sector": "Energy",
+      "setup_type": "LEADER_PULLBACK",
+      "signal_date": "2026-10-27",
+      "pullback_rank": 2,
+      "price": 435.98,
+      "atr": 19.2429,
+      "return_6m": 88.68,
+      "return_5d": -8.22,
+      "leader_percentile": 97.4,
+      "ema20": 450.42,
+      "ema50": 414.33,
+      "sma200": 285.57
+    },
+    {
+      "ticker": "PSX",
+      "company": "Phillips 66",
+      "sector": "Energy",
+      "setup_type": "LEADER_PULLBACK",
+      "signal_date": "2026-10-27",
+      "pullback_rank": 3,
+      "price": 268.53,
+      "atr": 10.3814,
+      "return_6m": 64.67,
+      "return_5d": -7.73,
+      "leader_percentile": 95.2,
+      "ema20": 279.39,
+      "ema50": 262.32,
+      "sma200": 195.49
+    },
+    {
+      "ticker": "VLO",
+      "company": "Valero Energy",
+      "sector": "Energy",
+      "setup_type": "LEADER_PULLBACK",
+      "signal_date": "2026-10-27",
+      "pullback_rank": 4,
+      "price": 387.34,
+      "atr": 19.9236,
+      "return_6m": 62.6,
+      "return_5d": -10.63,
+      "leader_percentile": 95.0,
+      "ema20": 420.87,
+      "ema50": 394.11,
+      "sma200": 281.39
+    }
+  ]
+}

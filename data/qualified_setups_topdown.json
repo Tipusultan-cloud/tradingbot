@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-27T15:20:37.227574+00:00",
+  "generated_at": "2026-10-28T17:22:08.993403+00:00",
   "strategy": "STRICT_DUAL_TOP_DOWN_DYNAMIC_200",
   "universe_size": 200,
   "rules": {
@@ -22,27 +22,27 @@
   },
   "market": {
     "ticker": "SPY",
-    "bullish": false,
-    "return_20": -0.03
+    "bullish": true,
+    "return_20": 0.71
   },
   "bullish_sectors": [
     {
-      "sector": "Energy",
-      "etf": "XLE",
-      "return_20": 12.14,
-      "vs_spy": 12.17
-    },
-    {
       "sector": "Health Care",
       "etf": "XLV",
-      "return_20": 4.68,
-      "vs_spy": 4.71
+      "return_20": 4.95,
+      "vs_spy": 4.23
+    },
+    {
+      "sector": "Energy",
+      "etf": "XLE",
+      "return_20": 10.84,
+      "vs_spy": 10.12
     },
     {
       "sector": "Consumer Staples",
       "etf": "XLP",
-      "return_20": 6.9,
-      "vs_spy": 6.93
+      "return_20": 6.48,
+      "vs_spy": 5.76
     }
   ],
   "qualified": [],

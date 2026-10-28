@@ -1,7 +1,7 @@
 {
-  "generated_at": "2026-10-27T15:20:37.574500+00:00",
+  "generated_at": "2026-10-28T17:22:09.524541+00:00",
   "strategy": "STRICT_DUAL_CURRENT_BEST_OPPORTUNITY",
-  "market_bullish": false,
+  "market_bullish": true,
   "rules": {
     "both_scanners_must_agree": true,
     "minimum_setup_score": 95,

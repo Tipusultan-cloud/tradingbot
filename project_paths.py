@@ -82,6 +82,16 @@ MASTER_WEEKLY_SELECTION_JSON = (
     / "master_weekly_selection.json"
 )
 
+PULLBACK_SETUPS_JSON = (
+    DATA_DIR
+    / "pullback_setups.json"
+)
+
+SLOT_SELECTION_JSON = (
+    DATA_DIR
+    / "slot_selection.json"
+)
+
 
 # ============================================================
 # BACKTEST RESULT FILES

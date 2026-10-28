@@ -18,7 +18,8 @@ TradingBot is a swing-trading decision-support project. The system combines:
 - Backtesting
 - Weekly master selection
 
-The goal is to identify one high-quality A+ swing candidate at a time. A
+The goal is to fill up to two paper-trade slots: the A+ swing candidate
+first, then "leader pullbacks" (strong stocks that just dipped). A
 persistent one-trade-per-week lock is not implemented yet.
 
 The system does not guarantee a winning trade and does not automatically place
@@ -60,6 +61,18 @@ setups.json             topdown.json
 A+ candidate found       No A+ candidate
         ↓                     ↓
 Select ONE stock          NO TRADE
+        │
+        │      scanner_pullback.py
+        │      (S&P 500 leaders down >5% this week)
+        │             │
+        └──────┬──────┘
+               ↓
+        slot_selector.py
+               ↓
+  Fill free slots (max 2 open):
+  A+ pick first, then pullbacks
+               ↓
+  data/slot_selection.json
 ```
 
 ---
@@ -85,9 +98,11 @@ risk calculation
 ```
 
 The webhook accepts BUY signals only when the ticker appears in fresh scanner
-output and is the current best selection from the master selector. A missing
-or stale result fails closed. SELL signals continue to be handled as exit
-alerts.
+output and is the current best selection from the master selector, or is a
+leader-pullback pick in the fresh slot selection. Either way, a BUY is
+rejected while all `MAX_OPEN_TRADES` slots (default 2) hold open paper
+trades. A missing or stale result fails closed. SELL signals continue to be
+handled as exit alerts.
 
 ---
 
@@ -173,6 +188,39 @@ The selector currently sets `weekly_lock` to `false`; candidates can change
 between daily scans. It does not persist trade state or enforce a maximum of
 one new trade per calendar week.
 
+### Trade Slots and Leader Pullbacks (paper only)
+
+Up to `MAX_OPEN_TRADES` paper trades (default 2) can be open at once. Each
+open trade in the paper journal uses one slot. After each scan,
+`slot_selector.py` fills the free slots in this order:
+
+1. The A+ candidate above, if there is one.
+2. Leader pullbacks from `scanner_pullback.py`, strongest first.
+
+Stocks already held are skipped. A **leader pullback** is an S&P 500 stock
+that is:
+
+```text
+In the top 20% of the S&P 500 by 6-month return
+Above its 200-day average, with EMA20 > EMA50
+Down more than 5% over the last 5 sessions
+```
+
+Stop, target and position size are the same as for A+ trades (1.5 × ATR,
+2R, 1% risk). Pullbacks use no market filter. Earnings and news are shown as
+warnings, not blocks, because neither was in the pullback backtest. The
+pullback ranking always uses the S&P 500, whatever `UNIVERSE_SOURCE` is.
+
+Picks are in `data/slot_selection.json`, the dashboard's **Trade slots**
+panel, and the email. Paper journal entries record which strategy opened
+them (`A_PLUS` or `PULLBACK`).
+
+Backtest (`backtests/backtest_pullback_slots.py`, 10 years, $7,000 start):
+2 slots made +264% against +49% for the current one-trade bot, with a 12.2%
+max drawdown against 7.3%. It uses today's S&P 500 members, which flatters
+dip-buying, and the rule was chosen after looking at recent data. Forward
+paper results should confirm it before real money is used.
+
 ---
 
 ## Risk Management
@@ -238,8 +286,10 @@ TradingBot/
 ├── project_paths.py           # Central paths for generated files
 ├── scan_notifications.py      # Optional SMTP scan-summary email
 ├── scanner.py                 # Original technical scan
+├── scanner_pullback.py        # Leader-pullback scan (S&P 500)
 ├── scanner_topdown.py         # SPY → sector → stock scan
 ├── shadow_exits.py            # Replays exit rules on paper trades
+├── slot_selector.py           # Fills free trade slots: A+, then pullbacks
 ├── universe_builder.py        # Builds the daily stock universe
 ├── us_market_universe.py      # US-stock sources (SP500_TOP200, US_ALL)├── universe_loader.py         # Loads the generated universe
 ├── scheduled_daily_scan.ps1   # Compatibility entry for Task Scheduler
@@ -255,6 +305,8 @@ TradingBot/
 │   ├── qualified_setups_topdown.json
 │   ├── master_candidates.json
 │   ├── best_current_candidate.json
+│   ├── pullback_setups.json   # Current leader pullbacks
+│   ├── slot_selection.json    # Stocks picked for free trade slots
 │   ├── paper_trades.sqlite3   # Persistent simulated trades
 │   ├── paper_trades.csv       # Spreadsheet export of all paper trades
 │   └── archive/root_snapshots/ # Previous root-level output copies
@@ -349,6 +401,8 @@ python -u .\universe_builder.py
 python -u .\scanner.py
 python -u .\scanner_topdown.py
 python -u .\master_selector.py
+python -u .\scanner_pullback.py
+python -u .\slot_selector.py
 ```
 
 **Terminal 4 — ngrok**
@@ -403,7 +457,9 @@ Execution order:
 2. scanner.py
 3. scanner_topdown.py
 4. master_selector.py
-5. shadow_exits.py (a failure only warns)
+5. scanner_pullback.py (a failure only warns)
+6. slot_selector.py (a failure only warns)
+7. shadow_exits.py (a failure only warns)
 ```
 
 Run logs are stored in `logs/`.
@@ -426,6 +482,7 @@ Backtesting currently includes:
 - Holding-period analysis
 - Bad-news block comparison
 - Earnings blackout comparison
+- Leader-pullback entry and 1-3 trade slots
 
 Backtest code is stored in `backtests/`. Backtest CSV output is stored in
 `results/backtests/`.

@@ -83,7 +83,7 @@ $scanProcess = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
     Where-Object {
         $_.Name -eq "python.exe" -and
         $_.CommandLine -like "*$ProjectDir*" -and
-        $_.CommandLine -match "universe_builder\.py|scanner\.py|scanner_topdown\.py|master_selector\.py"
+        $_.CommandLine -match "universe_builder\.py|scanner\.py|scanner_topdown\.py|master_selector\.py|scanner_pullback\.py|slot_selector\.py"
     }
 
 if ($scanProcess) {

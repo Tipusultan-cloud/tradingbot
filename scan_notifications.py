@@ -6,7 +6,11 @@ from email.message import EmailMessage
 
 from dotenv import load_dotenv
 
-from project_paths import BEST_CURRENT_CANDIDATE_JSON, MASTER_CANDIDATES_JSON
+from project_paths import (
+    BEST_CURRENT_CANDIDATE_JSON,
+    MASTER_CANDIDATES_JSON,
+    SLOT_SELECTION_JSON,
+)
 
 
 def _email_settings():
@@ -90,6 +94,45 @@ def build_scan_message():
     )
 
 
+def build_slot_message(path=SLOT_SELECTION_JSON):
+    """One line per slot pick; empty if the slot selection did not run."""
+    try:
+        slots = _read_json(path)
+    except (OSError, ValueError):
+        return ""
+
+    open_count = len(slots.get("open_positions") or [])
+    lines = [
+        f"Trade slots: {slots.get('status', 'UNKNOWN')} "
+        f"({open_count} of {slots.get('max_slots', '?')} open)."
+    ]
+    for stock in slots.get("selections") or []:
+        if not isinstance(stock, dict):
+            continue
+        risk = stock.get("risk_preview") or {}
+        source = (
+            "leader pullback"
+            if stock.get("source") == "PULLBACK"
+            else "A+ pick"
+        )
+        checks = [
+            f"{name} {check.get('status', 'UNKNOWN')}"
+            for name, check in (
+                ("earnings", stock.get("earnings")),
+                ("news", stock.get("news")),
+            )
+            if isinstance(check, dict)
+        ]
+        lines.append(
+            f"Slot {stock.get('slot', '?')}: {stock.get('ticker', '?')} "
+            f"({source}) entry ~${risk.get('entry_reference', '?')}, "
+            f"stop ${risk.get('stop', '?')}, target ${risk.get('target', '?')}"
+            + (f"; {', '.join(checks)}" if checks else "")
+            + "."
+        )
+    return "\n".join(lines)
+
+
 def send_scan_email():
     settings = _email_settings()
     if settings is None:
@@ -100,9 +143,11 @@ def send_scan_email():
     message["Subject"] = "TradingBot daily scan summary"
     message["From"] = settings["SMTP_USERNAME"]
     message["To"] = settings["TRADINGBOT_ALERT_EMAIL"]
+    slot_text = build_slot_message()
     message.set_content(
         f"{build_scan_message()}\n\n"
-        "This is a paper-trading research alert, not a trade order."
+        + (f"{slot_text}\n\n" if slot_text else "")
+        + "This is a paper-trading research alert, not a trade order."
     )
     try:
         with smtplib.SMTP_SSL(

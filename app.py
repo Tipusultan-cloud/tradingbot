@@ -13,20 +13,24 @@ import hmac
 from project_paths import (
     BEST_CURRENT_CANDIDATE_JSON,
     MASTER_CANDIDATES_JSON,
+    PULLBACK_SETUPS_JSON,
     QUALIFIED_SETUPS_JSON,
     QUALIFIED_TOPDOWN_JSON,
+    SLOT_SELECTION_JSON,
     TOP_200_JSON,
 )
 from paper_journal import (
     DuplicateSignalError,
     OpenTradeExistsError,
     PaperTradeExportError,
+    count_open_trades,
     export_paper_trades_csv,
     get_paper_trades,
     record_entry,
     record_exit,
 )
 from shadow_exits import get_shadow_comparison
+from slot_selector import SOURCE_A_PLUS, SOURCE_PULLBACK, max_open_trades
 
 
 # ==========================================
@@ -103,6 +107,9 @@ SCANNER_MAX_AGE_HOURS = float(
 )
 
 
+MAX_OPEN_TRADES = max_open_trades()
+
+
 # ==========================================
 # QUALIFIED SCANNER FILE
 # ==========================================
@@ -156,6 +163,29 @@ def get_master_candidate(ticker):
             return candidate, "MASTER PASS"
 
     return None, "Ticker is not the current best master selection"
+
+
+def get_slot_candidate(ticker):
+    data, error = _load_fresh_result(
+        SLOT_SELECTION_JSON,
+        "Slot selection",
+    )
+    if error:
+        return None, error
+
+    selections = data.get("selections")
+    if not isinstance(selections, list):
+        return None, "Slot selection has no valid selections list"
+
+    for stock in selections:
+        if (
+            isinstance(stock, dict)
+            and str(stock.get("ticker", "")).upper() == ticker
+            and stock.get("source") == SOURCE_PULLBACK
+        ):
+            return stock, "PULLBACK SLOT PASS"
+
+    return None, "Ticker is not a current pullback slot selection"
 
 
 def _timestamp_error(generated_at, label):
@@ -263,12 +293,20 @@ def get_dashboard_data():
     best = _read_dashboard_json(
         BEST_CURRENT_CANDIDATE_JSON, "Current candidate", errors
     )
+    pullback = _read_dashboard_json(
+        PULLBACK_SETUPS_JSON, "Pullback scan", errors
+    )
+    slots = _read_dashboard_json(
+        SLOT_SELECTION_JSON, "Slot selection", errors
+    )
 
     scan_payloads = {
         "universe": ("Universe", universe),
         "technical": ("Technical scan", qualified),
         "topdown": ("Top-down scan", topdown),
         "master": ("Master selection", master),
+        "pullback": ("Pullback scan", pullback),
+        "slots": ("Slot selection", slots),
     }
     scan_statuses = {}
     for key, (source, payload) in scan_payloads.items():
@@ -343,6 +381,34 @@ def get_dashboard_data():
         "generated_at": candidate_time,
         "age_hours": candidate_age_hours,
     }
+
+    slot_selections = slots.get("selections", [])
+    if not isinstance(slot_selections, list):
+        slot_selections = []
+        errors.append({
+            "source": "Slot selection",
+            "message": "Selections must be a list.",
+        })
+    slot_summary = {
+        "status": (
+            slots.get("status")
+            if scan_statuses["slots"]["status"] == "current"
+            else "STALE DATA"
+        ),
+        "max_slots": slots.get("max_slots", MAX_OPEN_TRADES),
+        "free_slots": slots.get("free_slots"),
+        "open_positions": slots.get("open_positions", []),
+        # Stale picks are hidden so they are never mistaken for current ones.
+        "selections": (
+            slot_selections
+            if scan_statuses["slots"]["status"] == "current"
+            else []
+        ),
+        "warnings": slots.get("warnings", []),
+    }
+    pullback_setups = pullback.get("qualified", [])
+    if not isinstance(pullback_setups, list):
+        pullback_setups = []
 
     qualified_setups = qualified.get("qualified", [])
     topdown_setups = topdown.get("qualified", [])
@@ -437,11 +503,15 @@ def get_dashboard_data():
             "technical_setups": len(qualified_setups),
             "topdown_setups": len(topdown_setups),
             "approved": len(approved),
+            "pullback_setups": pullback.get(
+                "qualified_count", len(pullback_setups)
+            ),
             "open_paper_trades": len(paper_trades["open"]),
             "realized_pnl": paper_trades["summary"]["realized_pnl"],
         },
         "sector_ranking": sector_ranking,
         "recent_setups": topdown_setups[:10],
+        "slots": slot_summary,
         "paper_trades": paper_trades,
         "shadow_exits": shadow_exits,
         "scans": scan_statuses,
@@ -644,6 +714,20 @@ async def webhook(request: Request):
             )
         )
 
+        master_candidate, master_message = (
+            get_master_candidate(ticker)
+            if scanner_setup is not None
+            else (None, None)
+        )
+
+        strategy = SOURCE_A_PLUS
+        slot_setup, slot_message = None, None
+        if scanner_setup is None or master_candidate is None:
+            slot_setup, slot_message = get_slot_candidate(ticker)
+            if slot_setup is not None:
+                scanner_setup = slot_setup
+                strategy = SOURCE_PULLBACK
+
 
         # ==================================
         # TRADINGVIEW PASSED
@@ -713,11 +797,13 @@ async def webhook(request: Request):
                     "FAIL",
 
                 "reason":
-                    scanner_message
+                    scanner_message,
+
+                "pullback_slot":
+                    slot_message
             }
 
-        master_candidate, master_message = get_master_candidate(ticker)
-        if master_candidate is None:
+        if strategy == SOURCE_A_PLUS and master_candidate is None:
             return {
                 "status": "not_confirmed",
                 "ticker": ticker,
@@ -725,6 +811,27 @@ async def webhook(request: Request):
                 "scanner": "PASS",
                 "master": "FAIL",
                 "reason": master_message,
+                "pullback_slot": slot_message,
+            }
+
+        try:
+            open_trades = count_open_trades()
+        except (OSError, sqlite3.Error) as exc:
+            raise HTTPException(
+                status_code=500,
+                detail="Could not read the paper trade journal",
+            ) from exc
+
+        if open_trades >= MAX_OPEN_TRADES:
+            return {
+                "status": "not_confirmed",
+                "ticker": ticker,
+                "tradingview": "PASS",
+                "strategy": strategy,
+                "reason": (
+                    f"All {MAX_OPEN_TRADES} paper slots are full "
+                    f"({open_trades} open trades)"
+                ),
             }
 
 
@@ -820,6 +927,7 @@ async def webhook(request: Request):
                     risk_per_share * REWARD_RISK_RATIO
                 ),
                 setup_score=scanner_setup.get("setup_score"),
+                strategy=strategy,
             )
         except (DuplicateSignalError, OpenTradeExistsError) as exc:
             raise HTTPException(
@@ -894,6 +1002,11 @@ async def webhook(request: Request):
         print(
             "Ticker:",
             ticker
+        )
+
+        print(
+            "Strategy:",
+            strategy
         )
 
         print(
@@ -1032,8 +1145,14 @@ async def webhook(request: Request):
             "tradingview":
                 "PASS",
 
-            "master":
-                "PASS",
+            "strategy":
+                strategy,
+
+            "master": (
+                "PASS"
+                if strategy == SOURCE_A_PLUS
+                else "NOT USED (pullback slot)"
+            ),
 
             "entry_price":
                 round(

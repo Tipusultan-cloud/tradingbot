@@ -210,11 +210,81 @@ time. The exact final one-trade-per-week strategy has **not** been backtested.
 - [ ] Docker, CI pipeline (Azure DevOps), automated tests, security scanning.
 - [ ] Review/apply Terraform (Azure VM) — only after approving plan and cost.
 - [ ] Monitoring and logging for a cloud deployment.
+- [x] Leader-pullback entry + 2 trade slots, paper only (2026-10-28).
+- [ ] After 2-3 months of paper trades, compare `A_PLUS` vs `PULLBACK`
+      results in the journal against the backtest.
 - [ ] Real-money automation — only after enough forward paper-trading evidence.
 
 ---
 
 ## 5. Activity Log (newest first)
+
+### 2026-10-28 — Leader-pullback entry and 2 trade slots (paper only)
+- **What:** The bot can now hold up to 2 paper trades at once
+  (`MAX_OPEN_TRADES`, default 2). Free slots are filled with the A+ pick
+  first, then "leader pullbacks". New `scanner_pullback.py` →
+  `data/pullback_setups.json`; new `slot_selector.py` →
+  `data/slot_selection.json`; both run in the daily scan after
+  `master_selector.py` (failures only warn). The webhook also confirms a BUY
+  for a pullback slot pick, and rejects any BUY while all slots are full.
+  The paper journal records the strategy of each trade (`A_PLUS` /
+  `PULLBACK`; new `strategy` column, added automatically to the existing
+  journal). Dashboard has a **Trade slots** panel and a strategy column on
+  open positions; the email lists the slot picks.
+- **Why:** User asked to improve returns. Backtests in this session showed
+  the current bot is in cash most of the time: over the last 6 months it took
+  9 trades and lost $88 on $7,000. Wider stops (2.0 / 2.5 ATR) did not help
+  (2.5 ATR lost more in both 6 and 12 months), so the stop stays 1.5 ATR.
+  Across ~850,000 S&P 500 stock-days (2019-2026), the bot's entry conditions
+  did not raise the chance of a stock rising (56% after 20 days, same as any
+  stock), while 6-month leaders that fell >5% in a week averaged +3.2% over
+  20 days vs +1.4% for any stock. User chose to build the 2-slot combination.
+- **How:**
+  - Leader pullback: top 20% of the S&P 500 by 126-session return,
+    Close > SMA200, EMA20 > EMA50, and close more than 5% below the close 5
+    sessions earlier. Ranked by 6-month return. Always ranked against the
+    S&P 500 (as backtested), whatever `UNIVERSE_SOURCE` is.
+  - Same stop / target / size as A+ (1.5 ATR, 2R, 1% risk). No market
+    filter. Earnings and news shown as warnings only; neither was in the
+    pullback backtest.
+  - `backtests/backtest_pullback_slots.py` (10 years, $7,000, 1% risk of
+    total equity per trade, compounding, same execution as
+    `backtest_holdout_validation.py`). In a same-data check its 1-slot
+    results matched the holdout engine to within $3. Results in
+    `results/backtests/pullback_slots_comparison.csv`, `_trades.csv`,
+    `_yearly.csv`.
+- **Results (10 years, 2016-10-28 → 2026-10-28, start $7,000):**
+
+  | Variant | Trades | Win % | Exp. R | PF | Return | Max DD |
+  |---|---|---|---|---|---|---|
+  | 1 slot, A+ only (current bot) | 130 | 49.2 | 0.34 | 1.63 | +49% | 7.3% |
+  | 1 slot, pullback only | 238 | 48.7 | 0.31 | 1.63 | +101% | 10.0% |
+  | **2 slots, A+ then pullback (live)** | 462 | 49.1 | 0.30 | 1.69 | **+264%** | 12.2% |
+  | 3 slots, A+ then pullback | 693 | 47.5 | 0.25 | 1.55 | +386% | 14.5% |
+
+  2 slots beat the current bot in every period (first 5 years +$5,122 vs
+  +$1,364; last 5 +$7,636 vs +$1,724; last 2 +$2,956 vs +$701; last 12
+  months +$607 vs +$49). One losing year (2022, −$163). 3 slots made more
+  but per-trade quality fell (0.20R, PF 1.33 in the first 5 years). A+
+  trades get priority, but 84% of 2-slot trades were pullbacks (+0.31R vs
+  +0.27R for A+). An earlier scratch run one day before gave +282% for 2
+  slots; the 10-year window had shifted by one session.
+- **Caveats:** Today's S&P 500 members are used historically, which flatters
+  dip-buying. The pullback rule was chosen after looking at 2019-2026 data,
+  so there is no untouched holdout. Paper-trade it before real money.
+- **Note:** Pullback paper trades are only journaled when a TradingView (or
+  manual) BUY alert arrives for the picked ticker.
+- **Files changed:** `scanner_pullback.py`, `slot_selector.py`,
+  `backtests/backtest_pullback_slots.py`, `tests/test_pullback_slots.py`
+  (new); `app.py`, `paper_journal.py`, `project_paths.py`,
+  `scan_notifications.py`, `web/dashboard.html`,
+  `scripts/scheduled_daily_scan.ps1`, `scripts/start_tradingbot.ps1`,
+  `.env.example`, `README.md`, `docs/PROJECT_GUIDE.md`.
+- **Result:** 144 tests pass (28 new). Live run on 2026-10-28: 500 stocks
+  ranked, 4 pullbacks (MRNA, MPC, PSX, VLO); slots picked MRNA and MPC (no
+  A+ pick today).
+- **Next:** Paper-trade both strategies for 2-3 months and compare
+  `A_PLUS` vs `PULLBACK` results in the journal before any real money.
 
 ### 2026-10-27 — Backtest: S&P 500 + top-200 most-traded universe
 - **What:** New `backtests/backtest_top200_universe.py`; results in
