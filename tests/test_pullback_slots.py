@@ -233,6 +233,7 @@ class SlotSelectorMainTests(unittest.TestCase):
                 patch.object(slot_selector, "PULLBACK_SETUPS_JSON", pullback),
                 patch.object(slot_selector, "SLOT_SELECTION_JSON", output),
                 patch.object(slot_selector, "get_paper_trades", return_value={"open": []}),
+                patch.object(slot_selector, "get_pending_broker_orders", return_value=[]),
                 patch.object(slot_selector, "check_earnings", return_value={"status": "CLEAR"}),
                 patch.object(slot_selector, "check_news", return_value={"status": "UNKNOWN"}),
                 patch.object(slot_selector, "load_dotenv"),
@@ -323,6 +324,7 @@ class WebhookSlotTests(unittest.TestCase):
             patch.object(app, "MASTER_CANDIDATES_JSON", self.master),
             patch.object(app, "SLOT_SELECTION_JSON", self.slots),
             patch.object(app, "MAX_OPEN_TRADES", 2),
+            patch.object(app, "auto_trading_status", return_value=(False, "off")),
             patch.dict("os.environ", {"PAPER_JOURNAL_PATH": str(self.database)}),
             patch("builtins.print"),
         ]
@@ -547,6 +549,8 @@ class DashboardSlotTests(unittest.TestCase):
                 path.write_text(json.dumps(payload))
                 patches.append(patch.object(app, names[key], path))
             patches += [
+                patch.object(app, "auto_trading_status", return_value=(False, "off")),
+                patch.object(app, "get_pending_broker_orders", return_value=[]),
                 patch.object(app, "get_paper_trades", return_value=empty_journal),
                 patch.object(
                     app, "get_shadow_comparison",

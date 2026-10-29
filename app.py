@@ -9,6 +9,7 @@ import os
 import math
 import json
 import hmac
+import time
 
 from project_paths import (
     BEST_CURRENT_CANDIDATE_JSON,
@@ -31,6 +32,10 @@ from paper_journal import (
 )
 from shadow_exits import get_shadow_comparison
 from slot_selector import SOURCE_A_PLUS, SOURCE_PULLBACK, max_open_trades
+from broker import auto_trading_status, get_trading_client, latest_price
+from paper_journal import get_pending_broker_orders
+from trade_manager import SOURCE_MANUAL, TradeError, open_trade
+from trade_manager import sync as broker_sync
 
 
 # ==========================================
@@ -108,6 +113,17 @@ SCANNER_MAX_AGE_HOURS = float(
 
 
 MAX_OPEN_TRADES = max_open_trades()
+
+
+# Dashboard refreshes sync Alpaca fills and exits at most this often.
+BROKER_SYNC_SECONDS = 60
+_last_broker_sync = 0.0
+
+# The Buy button only works from the local dashboard page.
+DASHBOARD_ORIGINS = {
+    "http://127.0.0.1:8001",
+    "http://localhost:8001",
+}
 
 
 # ==========================================
@@ -486,6 +502,8 @@ def get_dashboard_data():
             "message": "Sector ranking must be a list.",
         })
 
+    broker = _broker_state(errors)
+
     try:
         paper_trades = get_paper_trades(limit=10)
     except (OSError, sqlite3.Error) as exc:
@@ -532,11 +550,96 @@ def get_dashboard_data():
         "sector_ranking": sector_ranking,
         "recent_setups": topdown_setups[:10],
         "slots": slot_summary,
+        "broker": broker,
         "paper_trades": paper_trades,
         "shadow_exits": shadow_exits,
         "scans": scan_statuses,
         "errors": errors,
     }
+
+
+def _broker_state(errors):
+    """Auto-trading status, Alpaca orders waiting to fill, rate-limited sync."""
+    global _last_broker_sync
+    enabled, reason = auto_trading_status()
+    if enabled and time.monotonic() - _last_broker_sync >= BROKER_SYNC_SECONDS:
+        _last_broker_sync = time.monotonic()
+        try:
+            result = broker_sync(get_trading_client(), latest_price)
+            for error in result["errors"]:
+                errors.append({"source": "Alpaca", "message": error})
+        except Exception as exc:  # network and API errors
+            errors.append({
+                "source": "Alpaca",
+                "message": f"Could not sync with Alpaca: {exc}",
+            })
+
+    try:
+        pending = get_pending_broker_orders()
+    except (OSError, sqlite3.Error):
+        pending = []
+    return {"enabled": enabled, "reason": reason, "pending_orders": pending}
+
+
+def find_listed_stock(ticker):
+    """(stock, strategy) from the fresh Bot 1 / Bot 2 lists, or an error."""
+    data, error = _load_fresh_result(SLOT_SELECTION_JSON, "Slot selection")
+    if error:
+        return None, None, error
+    bots = data.get("bots")
+    if not isinstance(bots, dict):
+        return None, None, "Slot selection has no bot lists"
+    for strategy in (SOURCE_A_PLUS, SOURCE_PULLBACK):
+        for stock in bots.get(strategy) or []:
+            if (
+                isinstance(stock, dict)
+                and str(stock.get("ticker", "")).upper() == ticker
+            ):
+                return stock, strategy, None
+    return None, None, f"{ticker} is not in the current Bot 1 or Bot 2 list"
+
+
+@dashboard_app.post("/api/buy")
+async def dashboard_buy(request: Request):
+    # A custom header forces a CORS preflight that this app never allows,
+    # so other websites cannot make the browser send this request.
+    if (
+        request.headers.get("origin") not in DASHBOARD_ORIGINS
+        or request.headers.get("x-tradingbot") != "dashboard"
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Buy requests are only accepted from the local dashboard",
+        )
+
+    try:
+        data = await request.json()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Body must be JSON") from exc
+    ticker = str((data or {}).get("ticker", "")).upper().strip()
+    if not ticker:
+        raise HTTPException(status_code=400, detail="Ticker is missing")
+
+    enabled, reason = auto_trading_status()
+    if not enabled:
+        raise HTTPException(status_code=409, detail=reason)
+
+    stock, strategy, error = find_listed_stock(ticker)
+    if stock is None:
+        raise HTTPException(status_code=409, detail=error)
+
+    try:
+        order = open_trade(
+            get_trading_client(), stock, strategy, SOURCE_MANUAL, latest_price
+        )
+    except TradeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception as exc:  # Alpaca rejections and network errors
+        raise HTTPException(
+            status_code=502,
+            detail=f"Alpaca did not accept the order: {exc}",
+        ) from exc
+    return {"status": "order_sent", **order}
 
 
 @dashboard_app.get("/", response_class=FileResponse)
@@ -684,6 +787,22 @@ async def webhook(request: Request):
             status_code=400,
             detail="Price must be greater than 0"
         )
+
+
+    # With auto trading on, Alpaca holds the positions; a journal-only
+    # TradingView trade would not match the paper account.
+    auto_enabled, _ = auto_trading_status()
+    if auto_enabled:
+        return {
+            "status": "ignored",
+            "ticker": ticker,
+            "action": action,
+            "reason": (
+                "Auto trading is on: buys come from the bot and the "
+                "dashboard Buy button, exits from the Alpaca stop and "
+                "target orders."
+            ),
+        }
 
 
     # ======================================

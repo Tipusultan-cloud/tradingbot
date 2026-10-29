@@ -78,6 +78,10 @@
     .bot-results { padding: 12px 19px; border-bottom: 1px solid #243248; color: #c2cede; font-size: 12px; font-variant-numeric: tabular-nums; }
     .flag { padding: 3px 7px; border-radius: 999px; background: #1b302e; color: #65dfb5; font-size: 9px; font-weight: 750; letter-spacing: .05em; }
     .flag.held { background: #302a1e; color: #f1c36a; }
+    .buy-button { border: 1px solid #2f6b58; border-radius: 8px; padding: 5px 11px; background: #173d3a; color: #75e2bf; font: inherit; font-size: 11px; font-weight: 700; cursor: pointer; }
+    .buy-button:hover:not(:disabled) { border-color: #61dcb1; }
+    .buy-button:disabled { border-color: #33445d; background: transparent; color: #73849d; cursor: not-allowed; }
+    .broker-note { padding: 10px 19px; border-bottom: 1px solid #243248; color: #8fa0b8; font-size: 11px; }
     .scan-list { display: grid; gap: 0; }
     .scan-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid #202d40; font-size: 12px; }
     .scan-item:last-child { border-bottom: 0; }
@@ -155,6 +159,7 @@
 
     <section class="grid" style="margin-top:14px">
       <article class="panel">
+        <div id="broker-note" class="broker-note">Checking auto trading…</div>
         <div class="panel-head"><h3>Trade slots</h3><span id="slot-summary" class="journal-summary">A+ pick first, then leader pullbacks · paper only</span></div>
         <div class="panel-content table-wrap">
           <table><thead><tr><th>Slot</th><th>Ticker</th><th>Strategy</th><th>Entry ref.</th><th>Stop</th><th>Target</th><th>Shares</th><th>Why</th><th>Checks</th></tr></thead><tbody id="slots-table"><tr><td colspan="9" class="empty">Loading slot selection…</td></tr></tbody></table>
@@ -167,14 +172,14 @@
         <div class="panel-head"><h3>Bot 1 · A+ (buy strength)</h3><span class="journal-summary">All stocks passing every A+ rule</span></div>
         <div id="bot1-results" class="bot-results">Loading results…</div>
         <div class="panel-content table-wrap">
-          <table><thead><tr><th>#</th><th>Ticker</th><th>Why</th><th>Entry ref.</th><th>Stop</th><th>Target</th><th>Shares</th><th></th></tr></thead><tbody id="bot1-table"><tr><td colspan="8" class="empty">Loading Bot 1 list…</td></tr></tbody></table>
+          <table><thead><tr><th>#</th><th>Ticker</th><th>Why</th><th>Entry ref.</th><th>Stop</th><th>Target</th><th>Shares</th><th></th><th></th></tr></thead><tbody id="bot1-table"><tr><td colspan="9" class="empty">Loading Bot 1 list…</td></tr></tbody></table>
         </div>
       </article>
       <article class="panel">
         <div class="panel-head"><h3>Bot 2 · Leader pullback (buy the dip)</h3><span class="journal-summary">S&amp;P 500 top-20% leaders down &gt;5% this week</span></div>
         <div id="bot2-results" class="bot-results">Loading results…</div>
         <div class="panel-content table-wrap">
-          <table><thead><tr><th>#</th><th>Ticker</th><th>Why</th><th>Entry ref.</th><th>Stop</th><th>Target</th><th>Shares</th><th></th></tr></thead><tbody id="bot2-table"><tr><td colspan="8" class="empty">Loading Bot 2 list…</td></tr></tbody></table>
+          <table><thead><tr><th>#</th><th>Ticker</th><th>Why</th><th>Entry ref.</th><th>Stop</th><th>Target</th><th>Shares</th><th></th><th></th></tr></thead><tbody id="bot2-table"><tr><td colspan="9" class="empty">Loading Bot 2 list…</td></tr></tbody></table>
         </div>
       </article>
     </section>
@@ -396,7 +401,34 @@
       ], empty);
     }
 
-    function renderBot(prefix, rows, stats, emptyMessage) {
+    async function buyStock(stock) {
+      const risk = stock.risk_preview || {};
+      const ok = window.confirm(
+        `Buy ${stock.ticker} on Alpaca PAPER (no real money)?
+
+` +
+        `About ${risk.shares ?? "?"} shares near $${number(risk.entry_reference, 2)}.
+` +
+        `Stop and 2R target are set from the price when the order is sent.`
+      );
+      if (!ok) return;
+      try {
+        const response = await fetch("/api/buy", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-TradingBot": "dashboard" },
+          body: JSON.stringify({ ticker: stock.ticker }),
+        });
+        const result = await response.json();
+        window.alert(response.ok
+          ? `Order sent: ${result.shares} ${result.ticker} · stop $${number(result.stop, 2)} · target $${number(result.target, 2)}. It appears under open positions once filled.`
+          : `Not bought: ${result.detail || response.status}`);
+      } catch (error) {
+        window.alert(`Not bought: ${error instanceof Error ? error.message : "request failed"}`);
+      }
+      refresh();
+    }
+
+    function renderBot(prefix, rows, stats, emptyMessage, buying) {
       const money = (value) => `${value < 0 ? "-" : value > 0 ? "+" : ""}$${Math.abs(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
       byId(`${prefix}-results`).textContent = stats
         ? `Paper results: ${number(stats.total_trades)} trades · ${number(stats.open_trades)} open · ${stats.win_rate == null ? "—" : `${number(stats.win_rate, 1)}%`} win rate · ${money(Number(stats.realized_pnl) || 0)} realized`
@@ -406,7 +438,7 @@
       if (!Array.isArray(rows) || rows.length === 0) {
         const row = document.createElement("tr");
         const empty = document.createElement("td");
-        empty.colSpan = 8;
+        empty.colSpan = 9;
         empty.className = "empty";
         empty.textContent = emptyMessage;
         row.appendChild(empty);
@@ -433,6 +465,19 @@
           flagCell.appendChild(flag);
         }
         row.appendChild(flagCell);
+        const buyCell = document.createElement("td");
+        if (buying.enabled) {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "buy-button";
+          button.textContent = "Buy";
+          const busy = buying.busy.has(stock.ticker);
+          button.disabled = busy || buying.slotsFull;
+          button.title = busy ? "Already held or waiting to fill" : buying.slotsFull ? "All slots are in use" : "Buy on Alpaca paper";
+          button.addEventListener("click", () => buyStock(stock));
+          buyCell.appendChild(button);
+        }
+        row.appendChild(buyCell);
         body.appendChild(row);
       }
     }
@@ -492,10 +537,21 @@
         const bots = data.slots?.bots || {};
         const byStrategy = data.paper_trades?.by_strategy || {};
         const listStale = data.slots?.status === "STALE DATA";
+        const broker = data.broker || {};
+        const pending = Array.isArray(broker.pending_orders) ? broker.pending_orders : [];
+        const busy = new Set([
+          ...(data.paper_trades?.open || []).map((trade) => trade.ticker),
+          ...pending.map((order) => order.ticker),
+        ]);
+        const maxSlots = Number(data.slots?.max_slots) || 2;
+        const buying = { enabled: broker.enabled === true, busy, slotsFull: busy.size >= maxSlots };
+        byId("broker-note").textContent = broker.enabled
+          ? `Auto trading ON · Alpaca paper (no real money) · ${busy.size} of ${maxSlots} slots in use${pending.length ? ` · ${pending.length} order(s) waiting to fill` : ""} · Buy buttons place bracket orders with a real stop and 2R target`
+          : `Auto trading OFF · ${broker.reason || "not configured"} · Buy buttons are hidden`;
         renderBot("bot1", bots.A_PLUS, byStrategy.A_PLUS,
-          listStale ? "List is stale or unavailable. Rerun the scan." : "No stock passes every A+ rule today.");
+          listStale ? "List is stale or unavailable. Rerun the scan." : "No stock passes every A+ rule today.", buying);
         renderBot("bot2", bots.PULLBACK, byStrategy.PULLBACK,
-          listStale ? "List is stale or unavailable. Rerun the scan." : "No leader pullback today.");
+          listStale ? "List is stale or unavailable. Rerun the scan." : "No leader pullback today.", buying);
         renderRows("setups-table", data.recent_setups, [
           { key: "ticker" }, { key: "sector" }, { key: "setup_type" },
           { key: "setup_score", format: "score" }, { key: "volume_ratio", format: "ratio" },

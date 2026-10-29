@@ -108,6 +108,7 @@ class DashboardJsonTests(unittest.TestCase):
                 patch.object(app, "QUALIFIED_TOPDOWN_JSON", paths["topdown"]),
                 patch.object(app, "MASTER_CANDIDATES_JSON", paths["master"]),
                 patch.object(app, "BEST_CURRENT_CANDIDATE_JSON", paths["best"]),
+                patch.object(app, "auto_trading_status", return_value=(False, "off")),
                 patch.object(
                     app,
                     "get_paper_trades",
@@ -171,6 +172,7 @@ class DashboardJsonTests(unittest.TestCase):
                 patch.object(app, "QUALIFIED_TOPDOWN_JSON", paths["topdown"]),
                 patch.object(app, "MASTER_CANDIDATES_JSON", paths["master"]),
                 patch.object(app, "BEST_CURRENT_CANDIDATE_JSON", paths["best"]),
+                patch.object(app, "auto_trading_status", return_value=(False, "off")),
                 patch.object(
                     app,
                     "get_paper_trades",

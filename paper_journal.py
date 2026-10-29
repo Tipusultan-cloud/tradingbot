@@ -29,7 +29,12 @@ TRADE_CSV_FIELDS = (
     "realized_pnl",
     "exit_reason",
     "strategy",
+    "entry_source",
+    "broker_order_id",
 )
+
+# Columns added after the first journals were created.
+ADDED_COLUMNS = ("strategy", "entry_source", "broker_order_id")
 
 
 class DuplicateSignalError(Exception):
@@ -90,7 +95,9 @@ def initialize_journal(database_path=None):
                 exit_price REAL,
                 realized_pnl REAL,
                 exit_reason TEXT,
-                strategy TEXT
+                strategy TEXT,
+                entry_source TEXT,
+                broker_order_id TEXT
             )
             """
         )
@@ -98,9 +105,32 @@ def initialize_journal(database_path=None):
             row["name"]
             for row in connection.execute("PRAGMA table_info(paper_trades)")
         }
-        if "strategy" not in columns:
-            # Journals created before strategy tracking.
-            connection.execute("ALTER TABLE paper_trades ADD COLUMN strategy TEXT")
+        for column in ADDED_COLUMNS:
+            if column not in columns:
+                connection.execute(
+                    f"ALTER TABLE paper_trades ADD COLUMN {column} TEXT"
+                )
+        # Broker orders sent but not yet filled; a fill becomes a trade.
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS broker_orders (
+                order_id TEXT PRIMARY KEY,
+                ticker TEXT NOT NULL,
+                strategy TEXT,
+                entry_source TEXT,
+                shares INTEGER NOT NULL,
+                atr REAL NOT NULL,
+                stop_price REAL NOT NULL,
+                target_price REAL NOT NULL,
+                setup_score REAL,
+                status TEXT NOT NULL
+                    CHECK (status IN ('PENDING', 'FILLED', 'CANCELED')),
+                detail TEXT,
+                trade_id INTEGER REFERENCES paper_trades(id),
+                submitted_at TEXT NOT NULL
+            )
+            """
+        )
         connection.execute(
             """
             CREATE UNIQUE INDEX IF NOT EXISTS one_open_paper_trade_per_ticker
@@ -170,7 +200,7 @@ def export_paper_trades_csv(database_path=None, export_path=None):
                 SELECT id, ticker, entry_time, entry_price, atr, shares,
                        stop_price, target_price, setup_score, status,
                        exit_time, exit_price, realized_pnl, exit_reason,
-                       strategy
+                       strategy, entry_source, broker_order_id
                 FROM paper_trades
                 ORDER BY id
                 """
@@ -216,6 +246,8 @@ def record_entry(
     entry_time=None,
     database_path=None,
     strategy=None,
+    entry_source=None,
+    broker_order_id=None,
 ):
     ticker = str(ticker).strip().upper()
     if not ticker:
@@ -258,8 +290,9 @@ def record_entry(
             """
             INSERT INTO paper_trades (
                 ticker, entry_time, entry_price, atr, shares, stop_price,
-                target_price, setup_score, status, strategy
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?)
+                target_price, setup_score, status, strategy,
+                entry_source, broker_order_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?)
             """,
             (
                 ticker,
@@ -274,6 +307,8 @@ def record_entry(
                 target_price,
                 float(setup_score) if setup_score is not None else None,
                 strategy,
+                entry_source,
+                broker_order_id,
             ),
         )
         trade = dict(connection.execute(
@@ -363,6 +398,65 @@ def close_trade(trade_id, exit_price, exit_reason, exit_time, database_path=None
         ).fetchone())
     export_paper_trades_csv(database_path)
     return closed_trade
+
+
+def add_broker_order(
+    order_id,
+    ticker,
+    shares,
+    atr,
+    stop_price,
+    target_price,
+    strategy=None,
+    entry_source=None,
+    setup_score=None,
+    database_path=None,
+):
+    """Remember a sent entry order until it fills or is canceled."""
+    initialize_journal(database_path)
+    with _connection(database_path) as connection:
+        connection.execute(
+            """
+            INSERT INTO broker_orders (
+                order_id, ticker, strategy, entry_source, shares, atr,
+                stop_price, target_price, setup_score, status, submitted_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?)
+            """,
+            (
+                str(order_id),
+                str(ticker).strip().upper(),
+                strategy,
+                entry_source,
+                int(shares),
+                float(atr),
+                float(stop_price),
+                float(target_price),
+                setup_score,
+                time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            ),
+        )
+
+
+def get_pending_broker_orders(database_path=None):
+    initialize_journal(database_path)
+    with _connection(database_path) as connection:
+        rows = connection.execute(
+            "SELECT * FROM broker_orders WHERE status = 'PENDING' "
+            "ORDER BY submitted_at"
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def finish_broker_order(order_id, status, trade_id=None, detail=None, database_path=None):
+    initialize_journal(database_path)
+    with _connection(database_path) as connection:
+        connection.execute(
+            """
+            UPDATE broker_orders SET status = ?, trade_id = ?, detail = ?
+            WHERE order_id = ? AND status = 'PENDING'
+            """,
+            (status, trade_id, detail, str(order_id)),
+        )
 
 
 def count_open_trades(database_path=None):

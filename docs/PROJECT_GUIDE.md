@@ -127,7 +127,35 @@ The master selector currently chooses a best current candidate, not a
 persistent one-trade-per-week choice. Its `weekly_lock` is disabled; daily
 scans can replace the candidate.
 
-## 6. Connect TradingView carefully
+## 6. Turn on automatic trading (Alpaca paper, optional)
+
+With this on, the bot buys its slot picks itself and the dashboard gets a
+**Buy** button on every stock in the Bot 1 / Bot 2 lists. No real money is
+used, and TradingView alerts are ignored while it is on.
+
+1. Create a free account at alpaca.markets and open the **Paper Trading**
+   dashboard. Optionally reset the paper balance to the amount you want to
+   practice with.
+2. In the paper dashboard, generate API keys. Paper keys start with `PK`.
+3. In `.env`, set `ALPACA_API_KEY`, `ALPACA_API_SECRET`, `ALPACA_PAPER=true`
+   and `AUTO_TRADING=true`. Set `PAPER_ACCOUNT_BALANCE` to the balance that
+   position sizes should use (1% of it is risked per trade).
+4. Restart TradingBot. The dashboard shows **Auto trading ON** above the
+   Trade slots panel.
+5. The 8:30 AM scan sends orders once the market is open. Buy buttons only
+   work while the market is open (9:30 AM - 4:00 PM New York).
+6. Each buy has a real stop-loss and 2R target at Alpaca. Fills and exits
+   appear in the journal after the next scan or dashboard refresh.
+
+The same keys also turn on the bad-news check.
+
+To stop automatic trading, set `AUTO_TRADING=false` and restart. Open
+positions keep their stop and target orders at Alpaca.
+
+## 7. Connect TradingView carefully
+
+While `AUTO_TRADING=true`, the webhook ignores TradingView alerts; the steps
+below apply when auto trading is off.
 
 1. Confirm the webhook API responds at `http://127.0.0.1:8000/`.
 2. Get the current HTTPS address from the ngrok terminal.
@@ -160,7 +188,7 @@ scans can replace the candidate.
 Treat the ngrok URL and webhook secret as private. Do not share the URL or
 secret in screenshots or public posts.
 
-## 7. Run checks and backtests
+## 8. Run checks and backtests
 
 Run the focused tests:
 
@@ -176,7 +204,7 @@ Backtest scripts are in `backtests/`; result CSVs are in
 count, and SPY comparison. Existing backtests represent different strategy
 versions and do not by themselves validate the exact current master rules.
 
-## 8. Make a backup
+## 9. Make a backup
 
 1. Double-click `Backup TradingBot.bat`, or run
    `scripts/backup_tradingbot.ps1`.
@@ -187,7 +215,7 @@ versions and do not by themselves validate the exact current master rules.
 4. The `.venv` folder is excluded. Rebuild it from `requirements.txt` when
    restoring on a new machine.
 
-## 9. Troubleshoot in order
+## 10. Troubleshoot in order
 
 - **Dashboard won't open:** check that port 8001 is listening and start the
   dashboard with `uvicorn app:dashboard_app --host 127.0.0.1 --port 8001`.
@@ -208,7 +236,7 @@ versions and do not by themselves validate the exact current master rules.
   Task Scheduler, confirm you were signed in at the scheduled time, and review
   the latest scan log.
 
-## 10. Start the DevOps and IaC path
+## 11. Start the DevOps and IaC path
 
 The first DevOps task is source-control and secrets hygiene. Before
 initializing a private Git repository, confirm `.env` and local Terraform

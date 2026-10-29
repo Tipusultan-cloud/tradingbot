@@ -58,6 +58,12 @@ try {
         Write-Warning "Paper exit check failed for some trades; they stay open until the next run."
     }
 
+    # Record Alpaca fills and stop / target / 20-day exits (paper account).
+    & $Python ".\auto_trader.py" --sync
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning "Alpaca sync failed; trades are checked again on the next run."
+    }
+
     # A failed pullback scan leaves only the A+ pick for the slots.
     & $Python ".\scanner_pullback.py"
     if ($LASTEXITCODE -ne 0) {
@@ -67,6 +73,12 @@ try {
     & $Python ".\slot_selector.py"
     if ($LASTEXITCODE -ne 0) {
         Write-Warning "Slot selection failed; pullback BUY alerts will be rejected."
+    }
+
+    # Buys the slot picks on Alpaca paper when AUTO_TRADING=true.
+    & $Python ".\auto_trader.py"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning "Auto trader failed; no automatic orders were sent this run."
     }
 
     Write-Host ""

@@ -21,7 +21,7 @@ from dotenv import load_dotenv
 from earnings_calendar import check_earnings
 from master_selector import build_risk_preview, parse_timestamp
 from news_checker import check_news
-from paper_journal import get_paper_trades
+from paper_journal import get_paper_trades, get_pending_broker_orders
 from project_paths import (
     MASTER_CANDIDATES_JSON,
     PULLBACK_SETUPS_JSON,
@@ -193,9 +193,10 @@ def main():
     warnings = []
     master = load_fresh(MASTER_CANDIDATES_JSON, "Master selection", warnings)
     pullbacks = load_fresh(PULLBACK_SETUPS_JSON, "Pullback scan", warnings)
+    # Alpaca orders waiting to fill hold a slot too.
     open_tickers = [
         trade["ticker"] for trade in get_paper_trades(limit=1)["open"]
-    ]
+    ] + [order["ticker"] for order in get_pending_broker_orders()]
 
     selection = build_slot_selection(
         master=master,

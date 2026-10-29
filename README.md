@@ -247,8 +247,26 @@ Typical historical holding period: about 5-15 trading days
 
 Position sizing is calculated from the stop distance and maximum account risk.
 
+**Automatic trading on Alpaca paper (optional):** with `AUTO_TRADING=true`,
+`ALPACA_PAPER=true` and free Alpaca paper API keys in `.env`:
+
+- `auto_trader.py` buys the bots' slot picks after each scan, only while the
+  market is open.
+- Each **Buy** button in the dashboard's Bot 1 / Bot 2 lists buys that stock
+  (cherry-picking), as long as a slot is free.
+- Every buy is an Alpaca **bracket order**: a market buy plus a real
+  stop-loss (1.5 × ATR below the price when sent) and a 2R take-profit, both
+  kept at Alpaca until one fills. Shares risk 1% of `PAPER_ACCOUNT_BALANCE`.
+- Fills and stop/target exits are copied into the journal (`entry_source`
+  `AUTO` or `MANUAL`) by `auto_trader.py --sync` and by dashboard refreshes
+  (at most once a minute). A trade held 20 sessions is sold at market.
+- Orders waiting to fill hold a slot. TradingView alerts are ignored while
+  auto trading is on, so the journal always matches the Alpaca account.
+- A live (real-money) Alpaca account is refused; there is no setting for it.
+
 **Automatic paper exits:** each daily scan runs `paper_exits.py` before the
-slot selector. It replays every open paper trade on completed daily bars and
+slot selector. It replays every open journal-only paper trade (Alpaca trades
+use their real stop and target orders instead) on completed daily bars and
 closes it at the recorded stop, at 2R, or at the close of the 20th session,
 the same rule as the backtests. The stop is checked before the target; a gap
 through either fills at the open; the entry day's high and low are skipped.
@@ -299,6 +317,8 @@ TradingBot/
 ├── Backup TradingBot.bat      # Creates a private project backup
 ├── Install Daily Scan Task.bat
 ├── app.py                     # Webhook API and dashboard data
+├── auto_trader.py             # Buys slot picks on Alpaca paper, syncs fills
+├── broker.py                  # Alpaca paper connection (paper only)
 ├── earnings_calendar.py       # Next-earnings-date warning
 ├── master_selector.py         # Applies the final strict rules
 ├── news_checker.py            # Bad-news headline block (Alpaca News API)
@@ -311,6 +331,7 @@ TradingBot/
 ├── scanner_topdown.py         # SPY → sector → stock scan
 ├── shadow_exits.py            # Replays exit rules on paper trades
 ├── slot_selector.py           # Fills free trade slots: A+, then pullbacks
+├── trade_manager.py           # Bracket orders, fills, exits, 20-day sells
 ├── universe_builder.py        # Builds the daily stock universe
 ├── us_market_universe.py      # US-stock sources (SP500_TOP200, US_ALL)├── universe_loader.py         # Loads the generated universe
 ├── scheduled_daily_scan.ps1   # Compatibility entry for Task Scheduler
@@ -480,9 +501,11 @@ Execution order:
 3. scanner_topdown.py
 4. master_selector.py
 5. paper_exits.py (a failure only warns)
-6. scanner_pullback.py (a failure only warns)
-7. slot_selector.py (a failure only warns)
-8. shadow_exits.py (a failure only warns)
+6. auto_trader.py --sync (Alpaca fills and exits; a failure only warns)
+7. scanner_pullback.py (a failure only warns)
+8. slot_selector.py (a failure only warns)
+9. auto_trader.py (buys slot picks if AUTO_TRADING=true; a failure only warns)
+10. shadow_exits.py (a failure only warns)
 ```
 
 Run logs are stored in `logs/`.

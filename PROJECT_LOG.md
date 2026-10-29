@@ -221,6 +221,54 @@ time. The exact final one-trade-per-week strategy has **not** been backtested.
 
 ## 5. Activity Log (newest first)
 
+### 2026-10-29 — Automatic trading on Alpaca paper + dashboard Buy buttons
+- **What:** Optional automatic trading for Bot 1 and Bot 2 on an Alpaca
+  **paper** account. New `broker.py` (Alpaca connection; refuses anything
+  but paper), `trade_manager.py` (bracket orders, fill/exit sync, 20-session
+  sell), `auto_trader.py` (buys slot picks after the scan; `--sync` records
+  fills and exits). Dashboard: **Buy** button on every stock in the Bot 1 /
+  Bot 2 lists (`POST /api/buy`) and an auto-trading status line. Journal:
+  new `entry_source` (`AUTO` / `MANUAL`) and `broker_order_id` columns and a
+  `broker_orders` table for orders waiting to fill.
+- **Why:** User wants both bots to trade automatically and to cherry-pick
+  stocks. User chose Alpaca paper (no money at risk, real stop orders) over
+  journal-only or real money, and a dashboard Buy button over TradingView
+  alerts for cherry-picks.
+- **How:**
+  - Off by default: needs `AUTO_TRADING=true`, `ALPACA_PAPER=true` and keys.
+    No setting enables a live account.
+  - Each buy is a GTC bracket order: market buy, stop at price - 1.5 ATR,
+    take-profit at 2R, from Alpaca's latest trade price when sent. Shares
+    risk 1% of `PAPER_ACCOUNT_BALANCE`. Orders only while the market is open.
+  - Slots (`MAX_OPEN_TRADES`, 2) count open trades plus orders waiting to
+    fill. A stock already held or waiting cannot be bought again.
+  - Sync: filled entry → journal trade at the fill price; filled stop or
+    target leg → closed `STOP` / `TARGET` at the fill; after 20 completed
+    sessions (Alpaca calendar) the legs are canceled and the position sold
+    at market (`TIME_EXIT`) at the next run during market hours.
+  - Scan order: ... `paper_exits.py` → `auto_trader.py --sync` →
+    `scanner_pullback.py` → `slot_selector.py` → `auto_trader.py`.
+    `paper_exits.py` now skips Alpaca trades.
+  - Buy endpoint safety: only from the local dashboard page (Origin must be
+    127.0.0.1/localhost:8001 and a custom `X-TradingBot` header is required,
+    which forces a CORS preflight the app never allows); the stock must be
+    in the fresh Bot 1 / Bot 2 lists.
+  - TradingView webhook alerts are ignored while auto trading is on, so the
+    journal always matches the Alpaca account.
+- **Files changed:** `broker.py`, `trade_manager.py`, `auto_trader.py`,
+  `tests/test_auto_trading.py` (new); `app.py`, `paper_journal.py`,
+  `paper_exits.py`, `slot_selector.py`, `web/dashboard.html`,
+  `scripts/scheduled_daily_scan.ps1`, `scripts/start_tradingbot.ps1`,
+  `.env.example`, `README.md`, `docs/PROJECT_GUIDE.md`, and older tests
+  (now patch the auto-trading switch so `.env` cannot change them).
+- **Result:** 189 tests pass (27 new, using a fake Alpaca client). Live:
+  with the current `.env` (no keys, `AUTO_TRADING` unset) the auto trader
+  skips and the dashboard shows "Auto trading OFF"; the Buy endpoint refuses
+  requests without the dashboard headers (403) and cross-site preflights
+  get 405. **Not yet tested against a real Alpaca paper account** (no keys).
+- **Next:** User adds Alpaca paper keys and `AUTO_TRADING=true`, restarts,
+  and checks the first orders in the Alpaca paper dashboard.
+
 ### 2026-10-29 — Bot 1 / Bot 2 lists and hand-picking
 - **What:** Every scan now lists every stock from both strategies: **Bot 1 ·
   A+** (all approved A+ stocks) and **Bot 2 · Leader pullback** (up to 20,

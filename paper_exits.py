@@ -38,8 +38,10 @@ def close_paper_trades(database_path=None, fetch=fetch_daily_bars):
     """Close every open paper trade whose exit rule has fired."""
     initialize_journal(database_path)
     with _connection(database_path) as connection:
+        # Alpaca trades have real stop / target orders; auto_trader.py syncs them.
         trades = connection.execute(
-            "SELECT * FROM paper_trades WHERE status = 'OPEN' ORDER BY id"
+            "SELECT * FROM paper_trades "
+            "WHERE status = 'OPEN' AND broker_order_id IS NULL ORDER BY id"
         ).fetchall()
 
     closed = []
