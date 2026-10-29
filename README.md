@@ -98,8 +98,8 @@ risk calculation
 ```
 
 The webhook accepts BUY signals only when the ticker appears in fresh scanner
-output and is the current best selection from the master selector, or is a
-leader-pullback pick in the fresh slot selection. Either way, a BUY is
+output and is an approved A+ stock in the master selection (Bot 1 list), or
+is in the fresh leader-pullback list (Bot 2 list). Either way, a BUY is
 rejected while all `MAX_OPEN_TRADES` slots (default 2) hold open paper
 trades. A missing or stale result fails closed. SELL signals continue to be
 handled as exit alerts.
@@ -212,7 +212,16 @@ warnings, not blocks, because neither was in the pullback backtest. The
 pullback ranking always uses the S&P 500, whatever `UNIVERSE_SOURCE` is.
 
 Picks are in `data/slot_selection.json`, the dashboard's **Trade slots**
-panel, and the email. Paper journal entries record which strategy opened
+panel, and the email.
+
+**Both bots' full lists:** every scan also lists every stock from each
+strategy so you can pick by hand: **Bot 1 · A+** (every stock passing all A+
+rules) and **Bot 2 · Leader pullback** (up to 20 pullbacks), each with entry
+reference, stop, target and shares, and with the bot's own picks and held
+stocks flagged. The lists are shown on the dashboard (with each bot's paper
+results: trades, open, win rate, realized P&L), in the email, and at the end
+of the scan window. A BUY alert is confirmed for any stock in either list
+while a slot is free. Paper journal entries record which strategy opened
 them (`A_PLUS` or `PULLBACK`).
 
 Backtest (`backtests/backtest_pullback_slots.py`, 10 years, $7,000 start):
@@ -237,6 +246,17 @@ Typical historical holding period: about 5-15 trading days
 ```
 
 Position sizing is calculated from the stop distance and maximum account risk.
+
+**Automatic paper exits:** each daily scan runs `paper_exits.py` before the
+slot selector. It replays every open paper trade on completed daily bars and
+closes it at the recorded stop, at 2R, or at the close of the 20th session,
+the same rule as the backtests. The stop is checked before the target; a gap
+through either fills at the open; the entry day's high and low are skipped.
+The exit reason (`STOP`, `GAP_STOP`, `TARGET`, `GAP_TARGET`, `TIME_EXIT`) is
+saved in the journal, and the freed slot can be refilled the same morning.
+This is a once-a-day check of paper trades, not real-time protection: with
+real money, place stop orders at the broker. A TradingView SELL that arrives
+first still closes the trade (`TRADINGVIEW_SELL`).
 
 **Shadow exits:** after each daily scan, `shadow_exits.py` replays every
 paper trade on daily prices with two exit rules: *2R or 20 days* and *half
@@ -282,6 +302,7 @@ TradingBot/
 ├── earnings_calendar.py       # Next-earnings-date warning
 ├── master_selector.py         # Applies the final strict rules
 ├── news_checker.py            # Bad-news headline block (Alpaca News API)
+├── paper_exits.py             # Daily stop / 2R / 20-day paper exits
 ├── paper_journal.py           # Persistent paper-trade journal
 ├── project_paths.py           # Central paths for generated files
 ├── scan_notifications.py      # Optional SMTP scan-summary email
@@ -348,8 +369,8 @@ The dashboard is read-only, refreshes every 30 seconds, and has a manual data
 refresh button that does not start a scan. It reports missing, invalid, or
 stale scan artifacts as warnings rather than presenting them as healthy. The
 paper journal separates open positions from closed history and summarizes
-realized P&L and estimated risk to recorded stops; stops are not monitored or
-executed automatically. It also keeps `data/paper_trades.csv` synchronized
+realized P&L and estimated risk to recorded stops; stops and targets are
+checked once a day by the scan (see Automatic paper exits). It also keeps `data/paper_trades.csv` synchronized
 with recorded entries and exits. Use **Download all trades (CSV)** to get the
 complete journal in Excel-friendly format. SQLite remains the source of truth;
 the generated CSV is ignored by Git.
@@ -360,8 +381,8 @@ summaries, configure SMTP settings in `.env`; without them the scanner still
 runs and logs that email was skipped.
 
 Confirmed TradingView BUY/SELL webhooks open and close simulated paper-journal
-records. The journal does not submit broker orders or auto-trigger stop/target
-exits.
+records. The daily scan also closes paper trades at stop, 2R target or 20
+days. The journal does not submit broker orders.
 
 ### Manual startup
 
@@ -401,6 +422,7 @@ python -u .\universe_builder.py
 python -u .\scanner.py
 python -u .\scanner_topdown.py
 python -u .\master_selector.py
+python -u .\paper_exits.py
 python -u .\scanner_pullback.py
 python -u .\slot_selector.py
 ```
@@ -457,9 +479,10 @@ Execution order:
 2. scanner.py
 3. scanner_topdown.py
 4. master_selector.py
-5. scanner_pullback.py (a failure only warns)
-6. slot_selector.py (a failure only warns)
-7. shadow_exits.py (a failure only warns)
+5. paper_exits.py (a failure only warns)
+6. scanner_pullback.py (a failure only warns)
+7. slot_selector.py (a failure only warns)
+8. shadow_exits.py (a failure only warns)
 ```
 
 Run logs are stored in `logs/`.

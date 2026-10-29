@@ -156,13 +156,18 @@ def get_master_candidate(ticker):
     if error:
         return None, error
 
-    candidate = data.get("best_current")
-    if isinstance(candidate, dict):
-        saved_ticker = str(candidate.get("ticker", "")).upper()
-        if saved_ticker == ticker:
-            return candidate, "MASTER PASS"
+    # Any approved A+ stock can be picked by hand, not only the best one.
+    candidates = [data.get("best_current")]
+    approved = data.get("approved")
+    if isinstance(approved, list):
+        candidates += approved
+    for candidate in candidates:
+        if isinstance(candidate, dict):
+            saved_ticker = str(candidate.get("ticker", "")).upper()
+            if saved_ticker == ticker:
+                return candidate, "MASTER PASS"
 
-    return None, "Ticker is not the current best master selection"
+    return None, "Ticker is not an approved A+ master candidate"
 
 
 def get_slot_candidate(ticker):
@@ -177,7 +182,17 @@ def get_slot_candidate(ticker):
     if not isinstance(selections, list):
         return None, "Slot selection has no valid selections list"
 
-    for stock in selections:
+    # The bot's slot picks first, then any stock in the Bot 2 list.
+    bots = data.get("bots")
+    pullback_list = (
+        bots.get(SOURCE_PULLBACK)
+        if isinstance(bots, dict)
+        else None
+    )
+    candidates = selections + (
+        pullback_list if isinstance(pullback_list, list) else []
+    )
+    for stock in candidates:
         if (
             isinstance(stock, dict)
             and str(stock.get("ticker", "")).upper() == ticker
@@ -185,7 +200,7 @@ def get_slot_candidate(ticker):
         ):
             return stock, "PULLBACK SLOT PASS"
 
-    return None, "Ticker is not a current pullback slot selection"
+    return None, "Ticker is not in the current pullback list"
 
 
 def _timestamp_error(generated_at, label):
@@ -405,6 +420,11 @@ def get_dashboard_data():
             else []
         ),
         "warnings": slots.get("warnings", []),
+        "bots": (
+            slots.get("bots") or {}
+            if scan_statuses["slots"]["status"] == "current"
+            else {}
+        ),
     }
     pullback_setups = pullback.get("qualified", [])
     if not isinstance(pullback_setups, list):

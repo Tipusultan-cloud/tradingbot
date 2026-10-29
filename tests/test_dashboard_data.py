@@ -197,14 +197,34 @@ class DashboardJsonTests(unittest.TestCase):
         self.assertEqual(dashboard["candidate_status"], "STALE DATA")
         self.assertEqual(dashboard["status"], "degraded")
 
-    def test_master_candidate_rejects_non_selected_ticker(self):
+    def test_master_candidate_accepts_any_approved_ticker(self):
+        # Hand-picking from the Bot 1 list: approved but not the best.
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "master.json"
             path.write_text(
                 json.dumps({
                     "generated_at": datetime.now(timezone.utc).isoformat(),
                     "best_current": {"ticker": "XYZ"},
-                    "approved": [{"ticker": "ABC"}],
+                    "approved": [{"ticker": "XYZ"}, {"ticker": "ABC"}],
+                }),
+                encoding="utf-8",
+            )
+
+            with patch.object(app, "MASTER_CANDIDATES_JSON", path):
+                candidate, message = app.get_master_candidate("ABC")
+
+        self.assertEqual(candidate["ticker"], "ABC")
+        self.assertEqual(message, "MASTER PASS")
+
+    def test_master_candidate_rejects_unapproved_ticker(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "master.json"
+            path.write_text(
+                json.dumps({
+                    "generated_at": datetime.now(timezone.utc).isoformat(),
+                    "best_current": {"ticker": "XYZ"},
+                    "approved": [{"ticker": "XYZ"}],
+                    "rejected": [{"ticker": "ABC"}],
                 }),
                 encoding="utf-8",
             )
@@ -213,7 +233,7 @@ class DashboardJsonTests(unittest.TestCase):
                 candidate, message = app.get_master_candidate("ABC")
 
         self.assertIsNone(candidate)
-        self.assertIn("not the current best", message)
+        self.assertIn("not an approved A+", message)
 
     def test_master_candidate_rejects_stale_results(self):
         with tempfile.TemporaryDirectory() as directory:

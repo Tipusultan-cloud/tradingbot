@@ -120,7 +120,8 @@ recorded as **paper trades** (no real money, no broker orders).
 - **Why:** Prove the strategy forward in real time before any real money.
 - **How:** Confirmed BUY → open position; SELL → close it and store realized
   P&L. Blocks a second open trade in the same ticker and duplicate signals.
-  Stops/targets are **not** auto-executed.
+  Since 2026-10-28 the daily scan closes paper trades at stop, 2R target or
+  20 days (`paper_exits.py`). No broker orders.
 
 ### 2.9 Automation and scripts — `scripts/`, `.bat` files
 - **What:** One-click start, scheduled daily scan, backups, optional email.
@@ -211,6 +212,7 @@ time. The exact final one-trade-per-week strategy has **not** been backtested.
 - [ ] Review/apply Terraform (Azure VM) — only after approving plan and cost.
 - [ ] Monitoring and logging for a cloud deployment.
 - [x] Leader-pullback entry + 2 trade slots, paper only (2026-10-28).
+- [x] Automatic paper exits at stop / 2R / 20 days (2026-10-28).
 - [ ] After 2-3 months of paper trades, compare `A_PLUS` vs `PULLBACK`
       results in the journal against the backtest.
 - [ ] Real-money automation — only after enough forward paper-trading evidence.
@@ -218,6 +220,65 @@ time. The exact final one-trade-per-week strategy has **not** been backtested.
 ---
 
 ## 5. Activity Log (newest first)
+
+### 2026-10-29 — Bot 1 / Bot 2 lists and hand-picking
+- **What:** Every scan now lists every stock from both strategies: **Bot 1 ·
+  A+** (all approved A+ stocks) and **Bot 2 · Leader pullback** (up to 20,
+  was 10), each with entry reference, stop, target, shares and flags for the
+  bot's slot picks and held stocks. Shown on the dashboard (two side-by-side
+  panels, each with its own paper results), in the email, and at the end of
+  the scan window. `slot_selection.json` has a new `bots` field;
+  `get_paper_trades()` returns `by_strategy` results.
+- **Why:** User wants to see both bots' results every time the bot runs and
+  sometimes pick good stocks themselves.
+- **Rule change:** The webhook now confirms a BUY for **any** stock in either
+  list, not only the bot's picks: any approved A+ stock (was: only the #1
+  best) and any stock in the pullback list (was: only the slot picks). The
+  2-slot limit, freshness checks and scanner check for A+ still apply.
+  `test_master_candidate_rejects_non_selected_ticker` was replaced by tests
+  for the new rule (approved accepted, unapproved rejected).
+- **Files changed:** `slot_selector.py`, `scanner_pullback.py`, `app.py`,
+  `paper_journal.py`, `scan_notifications.py`, `web/dashboard.html`,
+  `tests/test_pullback_slots.py`, `tests/test_dashboard_data.py`,
+  `README.md`, `docs/PROJECT_GUIDE.md`.
+- **Result:** 162 tests pass. Live run 2026-10-29: Bot 1 = HCA; Bot 2 =
+  MRNA, MPC, PSX, VLO, MRK; slot picks HCA and MRNA.
+- **Note:** Hand-picked trades are not what the backtest tested (it always
+  took the top pick); the per-bot results will include them.
+
+### 2026-10-28 — Automatic paper exits at stop / 2R target / 20 days
+- **What:** New `paper_exits.py`, run in the daily scan after
+  `master_selector.py` and before `scanner_pullback.py` /
+  `slot_selector.py`. It closes open paper trades that hit their stop, 2R
+  target or 20-day limit, and records the reason (`STOP`, `GAP_STOP`,
+  `TARGET`, `GAP_TARGET`, `TIME_EXIT`). New `paper_journal.close_trade()`
+  closes one open trade by id. Dashboard: closed-trade history shows strategy
+  and exit reason; open-positions note says exits are checked once a day.
+- **Why:** User asked whether the bot has a stop loss. It calculated and
+  recorded stops but never acted on them: paper trades only closed on a
+  TradingView SELL, so a stopped-out trade kept its slot and blocked new
+  picks, and paper results could not be compared with the backtests. User
+  chose this option over per-trade TradingView exit alerts; real stop orders
+  at a broker are still needed before real money.
+- **How:** Reuses `shadow_exits.simulate("RULE_2R_20D", ...)` and
+  `fetch_daily_bars`, so the live exit is the same rule as the backtests and
+  the Exit comparison panel: recorded stop, 2R from entry, close of the 20th
+  session; stop checked before target; gaps fill at the open; the entry
+  day's high/low are skipped (entry time within the day is unknown); no
+  slippage. Exit time is recorded as 4 PM New York on the exit day. A failed
+  price lookup leaves the trade open and is retried next run. A TradingView
+  SELL that arrives first still closes the trade as before.
+- **Files changed:** `paper_exits.py`, `tests/test_paper_exits.py` (new);
+  `paper_journal.py`, `web/dashboard.html`,
+  `scripts/scheduled_daily_scan.ps1`, `scripts/start_tradingbot.ps1`,
+  `README.md`, `docs/PROJECT_GUIDE.md`.
+- **Result:** 156 tests pass (12 new). Live run: no open paper trades yet.
+  Real-price check on a temporary journal: MPC (entry 2026-08-11 $318.29)
+  closed at its 2R target $353.17 on 2026-08-13, as in the backtest. GDDY
+  (entry 2026-09-22 $105.90) closed as GAP_STOP at $98.16 on 2026-09-23; the
+  backtest stopped it on the entry day, which the live check skips.
+- **Next:** With real money, place stop orders at the broker; this check runs
+  once a day on paper trades only.
 
 ### 2026-10-28 — Leader-pullback entry and 2 trade slots (paper only)
 - **What:** The bot can now hold up to 2 paper trades at once

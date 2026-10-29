@@ -12,7 +12,7 @@ import pandas as pd
 
 import app
 import slot_selector
-from paper_journal import count_open_trades, get_paper_trades, record_entry
+from paper_journal import close_trade, count_open_trades, get_paper_trades, record_entry
 from scan_notifications import build_slot_message
 from scanner_pullback import find_pullback_setups, latest_metrics
 from slot_selector import build_slot_selection, load_fresh
@@ -368,7 +368,26 @@ class WebhookSlotTests(unittest.TestCase):
         result = self.buy("ZZZ")
 
         self.assertEqual(result["status"], "not_confirmed")
-        self.assertIn("not a current pullback", result["pullback_slot"])
+        self.assertIn("not in the current pullback list", result["pullback_slot"])
+
+    def test_hand_picked_stock_from_bot_2_list_is_confirmed(self):
+        now = datetime.now(timezone.utc).isoformat()
+        self.slots.write_text(json.dumps({
+            "generated_at": now,
+            "selections": [{"ticker": "PB1", "source": "PULLBACK"}],
+            "bots": {
+                "A_PLUS": [],
+                "PULLBACK": [
+                    {"ticker": "PB1", "source": "PULLBACK", "rank": 1},
+                    {"ticker": "PB4", "source": "PULLBACK", "rank": 4},
+                ],
+            },
+        }))
+
+        result = self.buy("PB4")
+
+        self.assertEqual(result["status"], "FINAL_CONFIRMED")
+        self.assertEqual(result["strategy"], "PULLBACK")
 
     def test_stale_slot_selection_is_rejected(self):
         old = (datetime.now(timezone.utc) - timedelta(days=5)).isoformat()
@@ -388,6 +407,53 @@ class WebhookSlotTests(unittest.TestCase):
         self.assertEqual(result["status"], "not_confirmed")
         self.assertIn("All 2 paper slots are full", result["reason"])
         self.assertEqual(count_open_trades(self.database), 2)
+
+
+class BotListTests(unittest.TestCase):
+    def test_both_bots_list_every_stock_with_flags(self):
+        master = {
+            "best_current": A_PLUS,
+            "approved": [A_PLUS, {"ticker": "AP2", "price": 80.0, "atr": 2.0}],
+        }
+        lists = slot_selector.build_bot_lists(
+            master,
+            pullbacks("PB1", "PB2", "PB3"),
+            open_tickers=["PB2"],
+            selections=[{"ticker": "APL"}, {"ticker": "PB1"}],
+        )
+
+        self.assertEqual(
+            [(s["rank"], s["ticker"], s["slot_pick"]) for s in lists["A_PLUS"]],
+            [(1, "APL", True), (2, "AP2", False)],
+        )
+        self.assertEqual(
+            [(s["ticker"], s["held"], s["slot_pick"]) for s in lists["PULLBACK"]],
+            [("PB1", False, True), ("PB2", True, False), ("PB3", False, False)],
+        )
+        self.assertEqual(lists["PULLBACK"][2]["risk_preview"]["stop"], 48.5)
+
+    def test_missing_sources_give_empty_lists(self):
+        lists = slot_selector.build_bot_lists(None, None, [], [])
+        self.assertEqual(lists, {"A_PLUS": [], "PULLBACK": []})
+
+    def test_journal_results_per_bot(self):
+        with tempfile.TemporaryDirectory() as folder:
+            database = Path(folder) / "paper.sqlite3"
+            record_entry("AAA", 100, 2, 10, 97, 106, database_path=database, strategy="A_PLUS")
+            record_entry("BBB", 100, 2, 10, 97, 106, database_path=database, strategy="PULLBACK")
+            record_entry("CCC", 100, 2, 10, 97, 106, database_path=database, strategy="PULLBACK")
+            trades = get_paper_trades(database_path=database)
+            pullback_ids = [t["id"] for t in trades["open"] if t["strategy"] == "PULLBACK"]
+            close_trade(pullback_ids[0], 106, "TARGET", "2026-01-07T21:00:00Z", database_path=database)
+            close_trade(pullback_ids[1], 97, "STOP", "2026-01-07T21:00:00Z", database_path=database)
+
+            by_strategy = get_paper_trades(database_path=database)["by_strategy"]
+
+        self.assertEqual(by_strategy["A_PLUS"]["open_trades"], 1)
+        self.assertEqual(by_strategy["A_PLUS"]["win_rate"], None)
+        self.assertEqual(by_strategy["PULLBACK"]["closed_trades"], 2)
+        self.assertEqual(by_strategy["PULLBACK"]["win_rate"], 50)
+        self.assertAlmostEqual(by_strategy["PULLBACK"]["realized_pnl"], 30)
 
 
 class SlotEmailTests(unittest.TestCase):
@@ -413,6 +479,30 @@ class SlotEmailTests(unittest.TestCase):
         self.assertIn("Slot 2: PB1 (leader pullback)", message)
         self.assertIn("stop $48.5", message)
         self.assertIn("earnings CLEAR", message)
+
+    def test_both_bot_lists_in_email(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "slots.json"
+            path.write_text(json.dumps({
+                "status": "SLOTS TO FILL",
+                "max_slots": 2,
+                "open_positions": [],
+                "selections": [],
+                "bots": {
+                    "A_PLUS": [],
+                    "PULLBACK": [{
+                        "rank": 1, "ticker": "PB1", "slot_pick": True,
+                        "risk_preview": {"entry_reference": 50, "stop": 48.5,
+                                         "target": 53, "shares": 66},
+                    }],
+                },
+            }))
+
+            message = build_slot_message(path)
+
+        self.assertIn("Bot 1 - A+ (buy strength): 0 stock(s)", message)
+        self.assertIn("Bot 2 - Leader pullback (buy the dip): 1 stock(s)", message)
+        self.assertIn("#1 PB1 entry ~$50, stop $48.5, target $53, 66 shares [bot pick]", message)
 
     def test_missing_slot_file_adds_nothing(self):
         self.assertEqual(build_slot_message(Path("does-not-exist.json")), "")

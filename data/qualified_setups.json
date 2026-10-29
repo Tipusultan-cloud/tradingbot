@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-28T17:21:59.297312+00:00",
+  "generated_at": "2026-10-29T14:12:42.926134+00:00",
   "strategy": "STRICT_DUAL_DYNAMIC_200",
   "universe_size": 200,
   "rules": {
@@ -23,9 +23,31 @@
   "market": {
     "ticker": "SPY",
     "bullish": true,
-    "return_20": 0.71
+    "return_20": 1.27
   },
-  "qualified": [],
+  "qualified": [
+    {
+      "ticker": "HCA",
+      "sector": "Health Care",
+      "setup_type": "EMA20_RECLAIM",
+      "setup_valid": true,
+      "grade": "A+",
+      "basic_score": 4,
+      "setup_score": 100,
+      "price": 463.22,
+      "prior_high20": 488.0,
+      "atr": 15.03,
+      "rsi": 57.74,
+      "volume_ratio": 1.69,
+      "stock_return_20": 8.55,
+      "stock_vs_spy": 7.28,
+      "relative_strength": 7.28,
+      "trend": true,
+      "momentum": true,
+      "volume": true,
+      "entry": true
+    }
+  ],
   "watch": [],
   "errors": []
 }

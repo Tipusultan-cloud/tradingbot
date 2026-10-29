@@ -78,14 +78,16 @@ Run the stages in sequence. Each stage uses output from the preceding stage:
    `data/qualified_setups_topdown.json`.
 4. `master_selector.py` compares scanner results and writes
    `data/master_candidates.json` and `data/best_current_candidate.json`.
-5. `scanner_pullback.py` finds S&P 500 leaders (top 20% by 6-month return,
+5. `paper_exits.py` closes open paper trades that hit their stop, 2R target,
+   or 20-day limit, so their slots can be refilled.
+6. `scanner_pullback.py` finds S&P 500 leaders (top 20% by 6-month return,
    in an uptrend) that fell more than 5% this week and writes
    `data/pullback_setups.json`.
-6. `slot_selector.py` fills free paper-trade slots (`MAX_OPEN_TRADES`,
+7. `slot_selector.py` fills free paper-trade slots (`MAX_OPEN_TRADES`,
    default 2) with the A+ pick first, then pullbacks, and writes
    `data/slot_selection.json`.
 
-Stages 5 and 6 only warn on failure; the A+ pipeline is unaffected.
+Stages 5-7 only warn on failure; the A+ pipeline is unaffected.
 
 The scheduled runner is `scripts/scheduled_daily_scan.ps1`. The root-level
 `scheduled_daily_scan.ps1` is kept as a compatibility entry point for
@@ -102,6 +104,7 @@ To run the stages manually:
 .\.venv\Scripts\python.exe -u .\scanner.py
 .\.venv\Scripts\python.exe -u .\scanner_topdown.py
 .\.venv\Scripts\python.exe -u .\master_selector.py
+.\.venv\Scripts\python.exe -u .\paper_exits.py
 .\.venv\Scripts\python.exe -u .\scanner_pullback.py
 .\.venv\Scripts\python.exe -u .\slot_selector.py
 ```
@@ -133,14 +136,17 @@ scans can replace the candidate.
 4. Send the secret, ticker, action, price, and ATR fields in the expected JSON
    alert body. Use the same secret configured in `.env`.
 5. A BUY signal is only confirmed if the ticker is in fresh original scanner
-   output and is the current master selection, or is a pullback pick in the
-   fresh slot selection, and a slot is free. A pullback paper trade is only
+   output and is an approved A+ stock (Bot 1 list), or is in the fresh
+   pullback list (Bot 2 list), and a slot is free. You can pick any stock
+   in either list, not only the bot's slot picks. A pullback paper trade is only
    recorded if a BUY alert arrives for that ticker, so set a TradingView
    alert (or send the same JSON) for each slot pick you want to follow.
    A confirmed BUY is recorded as
    a paper position in `data/paper_trades.sqlite3`; a TradingView SELL closes
    it and saves realized P&L. No live order is placed. This journal uses the
-   alert price and does not automatically execute or check stops/targets.
+   alert price. Each daily scan closes open paper trades that hit their
+   stop, 2R target, or 20-day limit (`paper_exits.py`); this is a
+   once-a-day paper check, not a broker stop order.
 6. To receive daily email alerts, set `SMTP_HOST`, `SMTP_PORT`,
    `SMTP_USERNAME`, `SMTP_PASSWORD`, and `TRADINGBOT_ALERT_EMAIL` in `.env`.
    For Gmail, use `smtp.gmail.com` on port `465`, your Gmail address as the

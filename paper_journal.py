@@ -334,6 +334,37 @@ def record_exit(ticker, exit_price, exit_time=None, database_path=None):
     return closed_trade
 
 
+def close_trade(trade_id, exit_price, exit_reason, exit_time, database_path=None):
+    """Close one open trade by id; None if it is no longer open."""
+    exit_price = _validate_positive("Exit price", exit_price)
+    initialize_journal(database_path)
+    with _connection(database_path) as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        trade = connection.execute(
+            "SELECT * FROM paper_trades WHERE id = ? AND status = 'OPEN'",
+            (trade_id,),
+        ).fetchone()
+        if trade is None:
+            return None
+
+        realized_pnl = (exit_price - trade["entry_price"]) * trade["shares"]
+        connection.execute(
+            """
+            UPDATE paper_trades
+            SET status = 'CLOSED', exit_time = ?, exit_price = ?,
+                realized_pnl = ?, exit_reason = ?
+            WHERE id = ? AND status = 'OPEN'
+            """,
+            (exit_time, exit_price, realized_pnl, exit_reason, trade_id),
+        )
+        closed_trade = dict(connection.execute(
+            "SELECT * FROM paper_trades WHERE id = ?",
+            (trade_id,),
+        ).fetchone())
+    export_paper_trades_csv(database_path)
+    return closed_trade
+
+
 def count_open_trades(database_path=None):
     initialize_journal(database_path)
     with _connection(database_path) as connection:
@@ -380,6 +411,28 @@ def get_paper_trades(limit=25, database_path=None):
             FROM paper_trades
             """
         ).fetchone()
+        strategy_rows = connection.execute(
+            """
+            SELECT
+                COALESCE(strategy, 'UNKNOWN') AS strategy,
+                COUNT(*) AS total_trades,
+                SUM(CASE WHEN status = 'OPEN' THEN 1 ELSE 0 END) AS open_trades,
+                SUM(CASE WHEN status = 'CLOSED' THEN 1 ELSE 0 END) AS closed_trades,
+                SUM(CASE WHEN status = 'CLOSED' THEN realized_pnl ELSE 0 END) AS realized_pnl,
+                SUM(CASE WHEN status = 'CLOSED' AND realized_pnl > 0 THEN 1 ELSE 0 END) AS wins
+            FROM paper_trades
+            GROUP BY COALESCE(strategy, 'UNKNOWN')
+            """
+        ).fetchall()
+    by_strategy = {}
+    for row in strategy_rows:
+        stats = {key: value or 0 for key, value in dict(row).items()}
+        stats["win_rate"] = (
+            stats["wins"] / stats["closed_trades"] * 100
+            if stats["closed_trades"]
+            else None
+        )
+        by_strategy[stats.pop("strategy")] = stats
     summary = dict(summary)
     summary = {
         key: value or 0
@@ -399,4 +452,5 @@ def get_paper_trades(limit=25, database_path=None):
         "open": open_trades,
         "recent": [dict(trade) for trade in recent_trades],
         "summary": summary,
+        "by_strategy": by_strategy,
     }

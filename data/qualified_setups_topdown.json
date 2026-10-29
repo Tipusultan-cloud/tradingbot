@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-28T17:22:08.993403+00:00",
+  "generated_at": "2026-10-29T14:12:52.685697+00:00",
   "strategy": "STRICT_DUAL_TOP_DOWN_DYNAMIC_200",
   "universe_size": 200,
   "rules": {
@@ -23,29 +23,74 @@
   "market": {
     "ticker": "SPY",
     "bullish": true,
-    "return_20": 0.71
+    "return_20": 1.27
   },
   "bullish_sectors": [
     {
-      "sector": "Health Care",
-      "etf": "XLV",
-      "return_20": 4.95,
-      "vs_spy": 4.23
+      "sector": "Information Technology",
+      "etf": "XLK",
+      "return_20": -2.43,
+      "vs_spy": -3.7
+    },
+    {
+      "sector": "Consumer Discretionary",
+      "etf": "XLY",
+      "return_20": 5.96,
+      "vs_spy": 4.69
     },
     {
       "sector": "Energy",
       "etf": "XLE",
-      "return_20": 10.84,
-      "vs_spy": 10.12
+      "return_20": 11.3,
+      "vs_spy": 10.03
+    },
+    {
+      "sector": "Health Care",
+      "etf": "XLV",
+      "return_20": 6.71,
+      "vs_spy": 5.44
     },
     {
       "sector": "Consumer Staples",
       "etf": "XLP",
-      "return_20": 6.48,
-      "vs_spy": 5.76
+      "return_20": 7.74,
+      "vs_spy": 6.47
+    },
+    {
+      "sector": "Materials",
+      "etf": "XLB",
+      "return_20": 6.49,
+      "vs_spy": 5.22
     }
   ],
-  "qualified": [],
+  "qualified": [
+    {
+      "ticker": "HCA",
+      "sector": "Health Care",
+      "sector_etf": "XLV",
+      "setup_type": "EMA20_RECLAIM",
+      "setup_valid": true,
+      "grade": "A+",
+      "market_bullish": true,
+      "sector_bullish": true,
+      "basic_score": 4,
+      "setup_score": 100,
+      "price": 463.22,
+      "prior_high20": 488.0,
+      "atr": 15.03,
+      "rsi": 57.74,
+      "volume_ratio": 1.69,
+      "stock_return_20": 8.55,
+      "sector_return_20": 6.71,
+      "stock_vs_sector": 1.84,
+      "stock_vs_spy": 7.28,
+      "sector_vs_spy": 5.44,
+      "trend": true,
+      "momentum": true,
+      "volume": true,
+      "entry": true
+    }
+  ],
   "watch": [],
   "errors": []
 }

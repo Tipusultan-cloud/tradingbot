@@ -52,6 +52,12 @@ try {
         throw "master_selector.py failed with exit code $LASTEXITCODE"
     }
 
+    # Close paper trades at stop / target / 20 days before slots are refilled.
+    & $Python ".\paper_exits.py"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning "Paper exit check failed for some trades; they stay open until the next run."
+    }
+
     # A failed pullback scan leaves only the A+ pick for the slots.
     & $Python ".\scanner_pullback.py"
     if ($LASTEXITCODE -ne 0) {

@@ -1,7 +1,52 @@
 {
-  "generated_at": "2026-10-28T17:22:09.524541+00:00",
-  "status": "WAIT",
-  "selected": null,
-  "approved_count": 0,
-  "reason": "No stock currently passes all strict A+ master rules."
+  "generated_at": "2026-10-29T14:12:55.639920+00:00",
+  "status": "A+ CURRENT CANDIDATE",
+  "selected": {
+    "ticker": "HCA",
+    "sector": "Health Care",
+    "sector_etf": "XLV",
+    "setup_type": "EMA20_RECLAIM",
+    "setup_priority": 1,
+    "grade": "A+",
+    "setup_score": 100,
+    "price": 463.22,
+    "prior_high20": 488.0,
+    "atr": 15.03,
+    "rsi": 57.74,
+    "volume_ratio": 1.69,
+    "stock_vs_sector": 1.84,
+    "sector_vs_spy": 5.44,
+    "stock_vs_spy": 7.28,
+    "base_scanner": "PASS",
+    "topdown_scanner": "PASS",
+    "market": "PASS",
+    "sector_trend": "PASS",
+    "earnings": {
+      "status": "CLEAR",
+      "next_earnings_date": "2027-01-26",
+      "trading_days_until": 63,
+      "warning_trading_days": 5,
+      "detail": "Next earnings 2027-01-26 in 63 trading day(s)."
+    },
+    "news": {
+      "status": "UNKNOWN",
+      "lookback_trading_days": 3,
+      "articles_checked": 0,
+      "bad_headlines": [],
+      "detail": "News lookup failed: Alpaca API keys are not configured in .env (ALPACA_API_KEY / ALPACA_API_SECRET)."
+    },
+    "current_rank": 1,
+    "risk_preview": {
+      "entry_reference": 463.22,
+      "atr": 15.03,
+      "stop": 440.68,
+      "target": 508.31,
+      "shares": 4,
+      "position_value": 1852.88,
+      "max_risk": 100.0,
+      "planned_risk": 90.18,
+      "reward_risk": 2.0
+    }
+  },
+  "approved_count": 1
 }

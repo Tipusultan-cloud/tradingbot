@@ -74,6 +74,10 @@
     td { color: #d6deea; font-variant-numeric: tabular-nums; }
     td:first-child { font-weight: 700; }
     .lower-grid { grid-template-columns: minmax(0, 1.35fr) minmax(300px, .85fr); margin-top: 14px; }
+    .bots-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 14px; }
+    .bot-results { padding: 12px 19px; border-bottom: 1px solid #243248; color: #c2cede; font-size: 12px; font-variant-numeric: tabular-nums; }
+    .flag { padding: 3px 7px; border-radius: 999px; background: #1b302e; color: #65dfb5; font-size: 9px; font-weight: 750; letter-spacing: .05em; }
+    .flag.held { background: #302a1e; color: #f1c36a; }
     .scan-list { display: grid; gap: 0; }
     .scan-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid #202d40; font-size: 12px; }
     .scan-item:last-child { border-bottom: 0; }
@@ -91,7 +95,7 @@
     footer { display: flex; justify-content: space-between; gap: 16px; padding-top: 20px; color: #73849d; font-size: 11px; line-height: 1.6; }
     @media (max-width: 760px) {
       .metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-      .main-grid, .lower-grid { grid-template-columns: 1fr; }
+      .main-grid, .lower-grid, .bots-grid { grid-template-columns: 1fr; }
       .shell { width: min(100% - 28px, 560px); padding-top: 20px; }
     }
     @media (max-width: 420px) {
@@ -158,6 +162,23 @@
       </article>
     </section>
 
+    <section class="grid bots-grid">
+      <article class="panel">
+        <div class="panel-head"><h3>Bot 1 · A+ (buy strength)</h3><span class="journal-summary">All stocks passing every A+ rule</span></div>
+        <div id="bot1-results" class="bot-results">Loading results…</div>
+        <div class="panel-content table-wrap">
+          <table><thead><tr><th>#</th><th>Ticker</th><th>Why</th><th>Entry ref.</th><th>Stop</th><th>Target</th><th>Shares</th><th></th></tr></thead><tbody id="bot1-table"><tr><td colspan="8" class="empty">Loading Bot 1 list…</td></tr></tbody></table>
+        </div>
+      </article>
+      <article class="panel">
+        <div class="panel-head"><h3>Bot 2 · Leader pullback (buy the dip)</h3><span class="journal-summary">S&amp;P 500 top-20% leaders down &gt;5% this week</span></div>
+        <div id="bot2-results" class="bot-results">Loading results…</div>
+        <div class="panel-content table-wrap">
+          <table><thead><tr><th>#</th><th>Ticker</th><th>Why</th><th>Entry ref.</th><th>Stop</th><th>Target</th><th>Shares</th><th></th></tr></thead><tbody id="bot2-table"><tr><td colspan="8" class="empty">Loading Bot 2 list…</td></tr></tbody></table>
+        </div>
+      </article>
+    </section>
+
     <section class="grid lower-grid">
       <article class="panel">
         <div class="panel-head"><h3>Qualified setups</h3><span class="muted" style="font-size:11px">Top-down scan</span></div>
@@ -189,7 +210,7 @@
 
     <section class="grid" style="margin-top:14px">
       <article class="panel">
-        <div class="panel-head"><h3>Open paper positions</h3><span id="open-position-summary" class="journal-summary">Paper only · stop risk is not automatically monitored</span></div>
+        <div class="panel-head"><h3>Open paper positions</h3><span id="open-position-summary" class="journal-summary">Paper only · stop, 2R target and 20-day exit checked once a day by the scan</span></div>
         <div class="panel-content table-wrap">
           <table><thead><tr><th>Ticker</th><th>Strategy</th><th>Opened</th><th>Entry</th><th>Shares</th><th>Stop</th><th>Target</th><th>Risk to stop</th></tr></thead><tbody id="open-trades-table"><tr><td colspan="8" class="empty">Loading open positions…</td></tr></tbody></table>
         </div>
@@ -199,7 +220,7 @@
       <article class="panel">
         <div class="panel-head"><h3>Closed-trade history</h3><span id="journal-summary" class="journal-summary">TradingView-confirmed simulation only</span><a class="download-link" href="/api/paper-trades.csv">Download all trades (CSV)</a></div>
         <div class="panel-content table-wrap">
-          <table><thead><tr><th>Ticker</th><th>Closed</th><th>Entry</th><th>Exit</th><th>Shares</th><th>Realized P&amp;L</th></tr></thead><tbody id="paper-trades-table"><tr><td colspan="6" class="empty">Loading trade history…</td></tr></tbody></table>
+          <table><thead><tr><th>Ticker</th><th>Strategy</th><th>Closed</th><th>Entry</th><th>Exit</th><th>Shares</th><th>Exit reason</th><th>Realized P&amp;L</th></tr></thead><tbody id="paper-trades-table"><tr><td colspan="8" class="empty">Loading trade history…</td></tr></tbody></table>
         </div>
       </article>
     </section>
@@ -375,6 +396,47 @@
       ], empty);
     }
 
+    function renderBot(prefix, rows, stats, emptyMessage) {
+      const money = (value) => `${value < 0 ? "-" : value > 0 ? "+" : ""}$${Math.abs(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      byId(`${prefix}-results`).textContent = stats
+        ? `Paper results: ${number(stats.total_trades)} trades · ${number(stats.open_trades)} open · ${stats.win_rate == null ? "—" : `${number(stats.win_rate, 1)}%`} win rate · ${money(Number(stats.realized_pnl) || 0)} realized`
+        : "Paper results: no trades yet";
+      const body = byId(`${prefix}-table`);
+      body.replaceChildren();
+      if (!Array.isArray(rows) || rows.length === 0) {
+        const row = document.createElement("tr");
+        const empty = document.createElement("td");
+        empty.colSpan = 8;
+        empty.className = "empty";
+        empty.textContent = emptyMessage;
+        row.appendChild(empty);
+        body.appendChild(row);
+        return;
+      }
+      for (const stock of rows) {
+        const risk = stock.risk_preview || {};
+        const row = document.createElement("tr");
+        cell(row, stock.rank);
+        cell(row, stock.ticker);
+        cell(row, stock.source === "PULLBACK"
+          ? `6M ${number(stock.return_6m, 1)}% · 5D ${number(stock.return_5d, 1)}%`
+          : `Setup ${number(stock.setup_score)}/100 · RSI ${number(stock.rsi, 0)}`);
+        for (const value of [risk.entry_reference, risk.stop, risk.target]) {
+          cell(row, value == null ? null : `$${number(value, 2)}`);
+        }
+        cell(row, risk.shares);
+        const flagCell = document.createElement("td");
+        if (stock.held || stock.slot_pick) {
+          const flag = document.createElement("span");
+          flag.className = stock.held ? "flag held" : "flag";
+          flag.textContent = stock.held ? "HELD" : "BOT PICK";
+          flagCell.appendChild(flag);
+        }
+        row.appendChild(flagCell);
+        body.appendChild(row);
+      }
+    }
+
     function renderMarket(market) {
       const panel = byId("market-panel");
       panel.replaceChildren();
@@ -422,11 +484,18 @@
           : "—";
         byId("journal-summary").textContent = `${number(data.paper_trades?.summary?.closed_trades)} closed · ${data.paper_trades?.summary?.win_rate == null ? "—" : `${number(data.paper_trades.summary.win_rate, 1)}%`} win rate · paper only`;
         const openRisk = Number(data.paper_trades?.summary?.open_risk_at_stop);
-        byId("open-position-summary").textContent = `${Number.isFinite(openRisk) ? `$${openRisk.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} total risk to recorded stops` : "Risk unavailable"} · stops are not automatically monitored`;
+        byId("open-position-summary").textContent = `${Number.isFinite(openRisk) ? `$${openRisk.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} total risk to recorded stops` : "Risk unavailable"} · stop, 2R target and 20-day exit checked once a day by the scan, not in real time`;
         byId("refresh-time").textContent = `Master selection · ${date(data.generated_at)}`;
         renderMarket(data.market || {});
         renderCandidate(data);
         renderSlots(data.slots || {});
+        const bots = data.slots?.bots || {};
+        const byStrategy = data.paper_trades?.by_strategy || {};
+        const listStale = data.slots?.status === "STALE DATA";
+        renderBot("bot1", bots.A_PLUS, byStrategy.A_PLUS,
+          listStale ? "List is stale or unavailable. Rerun the scan." : "No stock passes every A+ rule today.");
+        renderBot("bot2", bots.PULLBACK, byStrategy.PULLBACK,
+          listStale ? "List is stale or unavailable. Rerun the scan." : "No leader pullback today.");
         renderRows("setups-table", data.recent_setups, [
           { key: "ticker" }, { key: "sector" }, { key: "setup_type" },
           { key: "setup_score", format: "score" }, { key: "volume_ratio", format: "ratio" },
@@ -443,13 +512,23 @@
           { key: "stop_price", format: "money" }, { key: "target_price", format: "money" },
           { key: "risk_at_stop", format: "money" },
         ], "No open paper positions.");
+        const exitLabels = {
+          STOP: "Stop", GAP_STOP: "Stop (gap)", TARGET: "Target 2R", GAP_TARGET: "Target (gap)",
+          TIME_EXIT: "20 days", TRADINGVIEW_SELL: "TradingView sell",
+        };
         const recentClosedTrades = Array.isArray(data.paper_trades?.recent)
-          ? data.paper_trades.recent.filter((trade) => trade.status === "CLOSED")
+          ? data.paper_trades.recent
+            .filter((trade) => trade.status === "CLOSED")
+            .map((trade) => ({
+              ...trade,
+              strategy_label: strategyLabel(trade.strategy),
+              exit_label: exitLabels[trade.exit_reason] || trade.exit_reason,
+            }))
           : [];
         renderRows("paper-trades-table", recentClosedTrades, [
-          { key: "ticker" }, { key: "exit_time", format: "date" },
+          { key: "ticker" }, { key: "strategy_label" }, { key: "exit_time", format: "date" },
           { key: "entry_price", format: "money" }, { key: "exit_price", format: "money" },
-          { key: "shares" }, { key: "realized_pnl", format: "pnl" },
+          { key: "shares" }, { key: "exit_label" }, { key: "realized_pnl", format: "pnl" },
         ], "No closed paper trades recorded yet.");
         renderRows("shadow-table", data.shadow_exits?.trades, [
           { key: "ticker" }, { key: "entry_time", format: "date" },

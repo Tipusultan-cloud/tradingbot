@@ -130,6 +130,29 @@ def build_slot_message(path=SLOT_SELECTION_JSON):
             + (f"; {', '.join(checks)}" if checks else "")
             + "."
         )
+
+    bots = slots.get("bots") or {}
+    for source, title in (
+        ("A_PLUS", "Bot 1 - A+ (buy strength)"),
+        ("PULLBACK", "Bot 2 - Leader pullback (buy the dip)"),
+    ):
+        rows = [row for row in bots.get(source) or [] if isinstance(row, dict)]
+        lines.append("")
+        lines.append(f"{title}: {len(rows)} stock(s)")
+        for stock in rows:
+            risk = stock.get("risk_preview") or {}
+            flag = (
+                " [held]" if stock.get("held")
+                else " [bot pick]" if stock.get("slot_pick")
+                else ""
+            )
+            lines.append(
+                f"  #{stock.get('rank', '?')} {stock.get('ticker', '?')} "
+                f"entry ~${risk.get('entry_reference', '?')}, "
+                f"stop ${risk.get('stop', '?')}, "
+                f"target ${risk.get('target', '?')}, "
+                f"{risk.get('shares', '?')} shares{flag}"
+            )
     return "\n".join(lines)
 
 
