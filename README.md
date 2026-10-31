@@ -236,6 +236,31 @@ max drawdown against 7.3%. It uses today's S&P 500 members, which flatters
 dip-buying, and the rule was chosen after looking at recent data. Forward
 paper results should confirm it before real money is used.
 
+### Bot 3: Momentum Rider (paper only, higher risk)
+
+`scanner_momentum.py` looks at the S&P 500 plus the 200 most-traded other US
+stocks for a stock that, on the last completed day:
+
+```text
+Closed at least 5% higher than the day before
+Traded at least 3x its average volume of the previous 20 sessions
+Closed in the top 25% of the day's range
+Closed above its 200-day average
+```
+
+The biggest volume surge ranks first. Bot 3 has its own slot
+(`MOMENTUM_SLOTS`, default 1; 0 turns its buying off) on top of the two
+Bot 1 / Bot 2 slots, so it never takes their place. It **rides**: once the
+buy fills, one real stop order is placed 1.5 ATR below the entry (1% risk),
+and each run of `auto_trader.py` raises it to 3 ATR below the highest close
+since the entry. There is no target and no time limit; the trade ends when
+the stop is hit or when you press Sell.
+
+Backtest (10 years, Bot 3 alone in one slot, $7,000 start): 4.2% a year,
+33% of trades won, best trade 33.6R, worst drop 15%. Results depend on a few
+huge winners, and the test uses only stocks listed today, which flatters
+it. On the S&P 500 alone the same exit made 1.3% a year.
+
 ---
 
 ## Risk Management
@@ -368,6 +393,7 @@ TradingBot/
 ├── scan_notifications.py      # Optional SMTP scan-summary email
 ├── scanner.py                 # Original technical scan
 ├── scanner_pullback.py        # Leader-pullback scan (S&P 500)
+├── scanner_momentum.py        # Bot 3: big jumps on huge volume
 ├── scanner_topdown.py         # SPY → sector → stock scan
 ├── shadow_exits.py            # Replays exit rules on paper trades
 ├── slot_selector.py           # Fills free trade slots: A+, then pullbacks
@@ -486,7 +512,9 @@ python -u .\scanner_topdown.py
 python -u .\master_selector.py
 python -u .\paper_exits.py
 python -u .\scanner_pullback.py
+python -u .\scanner_momentum.py
 python -u .\slot_selector.py
+python -u .\auto_trader.py
 ```
 
 **Terminal 4 — ngrok**
@@ -542,11 +570,12 @@ Execution order:
 3. scanner_topdown.py
 4. master_selector.py
 5. paper_exits.py (a failure only warns)
-6. auto_trader.py --sync (Alpaca fills and exits; a failure only warns)
+6. auto_trader.py --sync (Alpaca fills and exits, Bot 3 trailing stops; a failure only warns)
 7. scanner_pullback.py (a failure only warns)
-8. slot_selector.py (a failure only warns)
-9. auto_trader.py (buys slot picks and parks idle cash in SPY if AUTO_TRADING=true; a failure only warns)
-10. shadow_exits.py (a failure only warns)
+8. scanner_momentum.py (Bot 3; downloads every US stock, several minutes; a failure only warns)
+9. slot_selector.py (a failure only warns)
+10. auto_trader.py (buys slot picks and parks idle cash in SPY if AUTO_TRADING=true; a failure only warns)
+11. shadow_exits.py (a failure only warns)
 ```
 
 Run logs are stored in `logs/`.

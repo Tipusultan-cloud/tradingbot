@@ -87,6 +87,11 @@ PULLBACK_SETUPS_JSON = (
     / "pullback_setups.json"
 )
 
+MOMENTUM_SETUPS_JSON = (
+    DATA_DIR
+    / "momentum_setups.json"
+)
+
 SLOT_SELECTION_JSON = (
     DATA_DIR
     / "slot_selection.json"

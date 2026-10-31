@@ -227,6 +227,48 @@ time. The exact final one-trade-per-week strategy has **not** been backtested.
 
 ## 5. Activity Log (newest first)
 
+### 2026-10-31 — Bot 3: Momentum Rider (paper only)
+
+**What:** A third bot that buys a stock the day after it jumps on huge
+volume and rides it with a trailing stop. New `scanner_momentum.py` →
+`data/momentum_setups.json`; its own slot (`MOMENTUM_SLOTS=1`) on top of
+the two Bot 1 / Bot 2 slots; a third bot card, tab and slot on the
+dashboard; momentum scan step in the daily scan.
+
+**Why:** The user asked for a bot that catches the highest-volume, biggest
+jumps and lets winners run, accepting the risk.
+
+**How:**
+- Signal: up ≥ 5% on the day, volume ≥ 3× the previous 20-day average,
+  close in the top 25% of the day's range, close > 200-day average;
+  biggest volume surge first. Universe: S&P 500 + 200 most-traded other US
+  stocks (`build_sp500_top_traded_constituents`).
+- 10-year backtest, Bot 3 alone in one slot, $7,000 start (scratchpad
+  script reusing the backtest engine):
+
+  | Universe / exit | per year | win | best | worst drop |
+  |---|---|---|---|---|
+  | S&P + top 200, trail 3 ATR (chosen) | 4.2% | 33% | 33.6R | 15% |
+  | S&P 500, trail 3 ATR | 1.3% | 40% | 5.0R | 10% |
+  | S&P 500, half 2R / rest 2.5R | 4.5% | 49% | 3.0R | 7% |
+  | S&P + top 200, half 2R / rest 2.5R | -2.8% | 36% | 2.6R | 33% |
+
+  The chosen version depends on a few huge winners (one 33.6R trade);
+  first 5 years 2.6% a year, last 5 years 5.8%.
+- Orders (`trade_manager.py`): a market buy; after the fill one GTC stop
+  order 1.5 ATR below; `update_trailing_stops()` (each `auto_trader.py`
+  run) replaces it with 3 ATR below the highest completed close since the
+  entry, never lower, and stores the new order id. No target, no 20-day
+  exit. Sell button cancels the stop and sells. Journal-only Bot 3 trades
+  use the `TRAIL_3ATR` replay in `paper_exits.py`.
+- Slots: `slot_selector.busy_by_bot()` splits open trades / waiting orders
+  into Bot 1/2 and Bot 3; `open_trade()` checks the right limit.
+- The live momentum scan downloads every US stock and took over 10 minutes
+  on the first run; it runs after the pullback scan, so the morning buys
+  happen later than before.
+- 247 tests pass (new: `tests/test_momentum_scanner.py`, Bot 3 trade tests
+  in `tests/test_auto_trading.py`).
+
 ### 2026-10-31 — Half of idle cash parked in SPY (built)
 
 **What:** New `cash_parking.py`. After the daily buys, `auto_trader.py`

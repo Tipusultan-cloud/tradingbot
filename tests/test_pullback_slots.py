@@ -533,7 +533,7 @@ class BotListTests(unittest.TestCase):
 
     def test_missing_sources_give_empty_lists(self):
         lists = slot_selector.build_bot_lists(None, None, [], [])
-        self.assertEqual(lists, {"A_PLUS": [], "PULLBACK": []})
+        self.assertEqual(lists, {"A_PLUS": [], "PULLBACK": [], "MOMENTUM": []})
 
     def test_journal_results_per_bot(self):
         with tempfile.TemporaryDirectory() as folder:

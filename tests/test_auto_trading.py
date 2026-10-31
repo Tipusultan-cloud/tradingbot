@@ -75,7 +75,14 @@ class FakeAlpaca:
         order.legs[-1] = leg(order.legs[-1].id, "stop", "filled", price, when)
 
     def replace_order_by_id(self, order_id, request):
+        # Alpaca answers a replace with a new order (new id).
         self.replaced.append((order_id, request.stop_price))
+        new = SimpleNamespace(
+            id=f"{order_id}-r", status="new", filled_avg_price=None,
+            filled_qty=0, filled_at=None, legs=[],
+        )
+        self.orders[new.id] = new
+        return new
 
     def fill(self, order_id, price, qty, when="2026-10-29T13:35:00Z"):
         order = self.orders[order_id]
@@ -180,7 +187,7 @@ class OpenTradeTests(JournalCase):
     def test_waiting_orders_and_open_trades_fill_the_slots(self):
         self.buy()
         record_entry("XYZ", 50, 1, 10, 48, 54, database_path=self.database)
-        with self.assertRaisesRegex(TradeError, "All 2 slots are full"):
+        with self.assertRaisesRegex(TradeError, "All 2 Bot 1 / Bot 2 slots are full"):
             self.buy({"ticker": "DEF", "atr": 1.0})
 
 
@@ -537,7 +544,7 @@ class DashboardBuyTests(JournalCase):
         with self.assertRaises(HTTPException) as caught:
             self.post("TSLA")
         self.assertEqual(caught.exception.status_code, 409)
-        self.assertIn("not in the current Bot 1 or Bot 2 list", caught.exception.detail)
+        self.assertIn("not in the current Bot 1, Bot 2 or Bot 3 list", caught.exception.detail)
 
     def test_refused_when_auto_trading_is_off(self):
         with patch.object(app, "auto_trading_status", return_value=(False, "off")):
@@ -642,6 +649,105 @@ class AutoTraderTests(JournalCase):
         )
         pending = get_pending_broker_orders(self.database)
         self.assertEqual([p["entry_source"] for p in pending], ["AUTO", "AUTO"])
+
+
+def daily_bars(closes, start="2026-10-29", atr=2.0):
+    return pd.DataFrame(
+        {"Close": closes, "ATR": atr},
+        index=pd.bdate_range(start, periods=len(closes)),
+    )
+
+
+class MomentumTradeTests(JournalCase):
+    """Bot 3: own slot, one stop order, trailing 3 ATR, no target or time limit."""
+
+    def buy_momentum(self, ticker="ABC"):
+        return self.buy({"ticker": ticker, "atr": 2.0}, strategy="MOMENTUM")
+
+    def filled(self):
+        self.buy_momentum()
+        self.client.fill("order-1", 100.0, 33)
+        self.sync()
+
+    def trail(self, closes):
+        return trade_manager.update_trailing_stops(
+            self.client, lambda ticker, entry_date: daily_bars(closes),
+            database_path=self.database,
+        )
+
+    def test_bot_3_has_its_own_slot(self):
+        record_entry("XYZ", 50, 1, 10, 48, 54, database_path=self.database, strategy="PULLBACK")
+        record_entry("DEF", 50, 1, 10, 48, 54, database_path=self.database, strategy="A_PLUS")
+
+        order = self.buy_momentum()
+
+        self.assertEqual(order["strategy"], "MOMENTUM")
+        self.assertIsNone(order["target2"])
+        with self.assertRaisesRegex(TradeError, "All 1 Bot 3 slots are full"):
+            self.buy_momentum("GHI")
+
+    def test_bot_3_trade_does_not_use_a_bot_1_2_slot(self):
+        self.buy_momentum()
+        self.buy({"ticker": "P1", "atr": 1.0})
+        self.buy({"ticker": "P2", "atr": 1.0})
+        with self.assertRaisesRegex(TradeError, "All 2 Bot 1 / Bot 2 slots are full"):
+            self.buy({"ticker": "P3", "atr": 1.0})
+
+    def test_fill_places_one_stop_order_without_target(self):
+        self.filled()
+
+        request = self.client.submitted[1].to_request_fields()
+        self.assertEqual(len(self.client.submitted), 2)
+        self.assertEqual((request["side"].value, request["type"].value), ("sell", "stop"))
+        self.assertEqual((request["qty"], request["stop_price"]), (33, 97.0))
+        self.assertEqual(request["time_in_force"].value, "gtc")
+        trade = get_paper_trades(database_path=self.database)["open"][0]
+        self.assertEqual((trade["rest_order_id"], trade["active_stop_price"]), ("order-2", 97.0))
+        self.assertIsNone(trade["target2_price"])
+
+    def test_stop_trails_3_atr_below_the_highest_close(self):
+        self.filled()
+
+        messages = self.trail([100, 104, 110, 107])
+
+        self.assertEqual(self.client.replaced, [("order-2", 104.0)])
+        self.assertIn("$97.00 -> $104.00", messages[0])
+        trade = get_paper_trades(database_path=self.database)["open"][0]
+        self.assertEqual((trade["rest_order_id"], trade["active_stop_price"]), ("order-2-r", 104.0))
+        self.trail([100, 104, 110, 107])
+        self.assertEqual(len(self.client.replaced), 1)
+
+    def test_stop_never_moves_down(self):
+        self.filled()
+        self.assertEqual(self.trail([100, 99, 98]), [])
+        self.assertEqual(self.client.replaced, [])
+
+    def test_trailing_stop_fill_closes_trade(self):
+        self.filled()
+        self.trail([100, 104, 110])
+        self.client.fill("order-2-r", 104.0, 33)
+
+        closed = self.sync()["closed"][0]
+
+        self.assertEqual(closed["exit_reason"], "TRAIL_STOP")
+        self.assertAlmostEqual(closed["realized_pnl"], 33 * 4)
+
+    def test_no_20_day_exit(self):
+        self.filled()
+        result = self.sync(today=date(2026, 12, 30))
+        self.assertEqual(result["closed"], [])
+        self.assertEqual(self.client.closed, [])
+
+    def test_sell_button_cancels_the_stop(self):
+        self.filled()
+
+        closed = trade_manager.sell_trade(
+            self.client, "ABC", lambda ticker: 104.0,
+            database_path=self.database, delay=0,
+        )
+
+        self.assertEqual(self.client.canceled, ["order-2"])
+        self.assertEqual(closed["exit_reason"], "MANUAL_SELL")
 
 
 if __name__ == "__main__":

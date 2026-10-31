@@ -1,14 +1,63 @@
 {
-  "generated_at": "2026-10-31T05:23:59.488535+00:00",
-  "strategy": "A_PLUS_THEN_LEADER_PULLBACK",
-  "status": "ALL SLOTS FULL",
+  "generated_at": "2026-10-31T17:22:07.534885+00:00",
+  "strategy": "A_PLUS_THEN_LEADER_PULLBACK_PLUS_MOMENTUM",
+  "status": "SLOTS TO FILL",
   "max_slots": 2,
   "open_positions": [
     "FTNT",
     "MPC"
   ],
   "free_slots": 0,
-  "selections": [],
+  "selections": [
+    {
+      "ticker": "REGN",
+      "company": "Regeneron Pharmaceuticals",
+      "sector": "Health Care",
+      "setup_type": "MOMENTUM_BREAKOUT",
+      "signal_date": "2026-10-30",
+      "momentum_rank": 1,
+      "price": 927.89,
+      "atr": 27.6421,
+      "jump_pct": 13.33,
+      "volume_ratio": 4.54,
+      "close_position": 0.92,
+      "sma200": 736.33,
+      "in_sp500": true,
+      "source": "MOMENTUM",
+      "slot": "Bot 3 #1",
+      "risk_preview": {
+        "entry_reference": 927.89,
+        "atr": 27.64,
+        "stop": 886.43,
+        "target": 1010.82,
+        "shares": 2,
+        "position_value": 1855.78,
+        "max_risk": 100.0,
+        "planned_risk": 82.93,
+        "reward_risk": 2.0
+      },
+      "earnings": {
+        "status": "CLEAR",
+        "next_earnings_date": "2027-01-28",
+        "trading_days_until": 63,
+        "last_earnings_date": "2026-10-30",
+        "trading_days_since": 1,
+        "warning_trading_days": 10,
+        "detail": "Next earnings 2027-01-28 in 63 trading day(s)."
+      },
+      "news": {
+        "status": "CLEAR",
+        "lookback_trading_days": 3,
+        "articles_checked": 9,
+        "bad_headlines": [],
+        "detail": "No bad news in 9 article(s) over the last 3 trading days."
+      },
+      "warnings": []
+    }
+  ],
+  "momentum_slots": 1,
+  "momentum_free": 1,
+  "momentum_open": [],
   "bots": {
     "A_PLUS": [],
     "PULLBACK": [
@@ -603,6 +652,55 @@
           "articles_checked": 8,
           "bad_headlines": [],
           "detail": "No bad news in 8 article(s) over the last 3 trading days."
+        },
+        "warnings": []
+      }
+    ],
+    "MOMENTUM": [
+      {
+        "ticker": "REGN",
+        "company": "Regeneron Pharmaceuticals",
+        "sector": "Health Care",
+        "setup_type": "MOMENTUM_BREAKOUT",
+        "signal_date": "2026-10-30",
+        "momentum_rank": 1,
+        "price": 927.89,
+        "atr": 27.6421,
+        "jump_pct": 13.33,
+        "volume_ratio": 4.54,
+        "close_position": 0.92,
+        "sma200": 736.33,
+        "in_sp500": true,
+        "source": "MOMENTUM",
+        "rank": 1,
+        "held": false,
+        "slot_pick": true,
+        "risk_preview": {
+          "entry_reference": 927.89,
+          "atr": 27.64,
+          "stop": 886.43,
+          "target": 1010.82,
+          "shares": 2,
+          "position_value": 1855.78,
+          "max_risk": 100.0,
+          "planned_risk": 82.93,
+          "reward_risk": 2.0
+        },
+        "earnings": {
+          "status": "CLEAR",
+          "next_earnings_date": "2027-01-28",
+          "trading_days_until": 63,
+          "last_earnings_date": "2026-10-30",
+          "trading_days_since": 1,
+          "warning_trading_days": 10,
+          "detail": "Next earnings 2027-01-28 in 63 trading day(s)."
+        },
+        "news": {
+          "status": "CLEAR",
+          "lookback_trading_days": 3,
+          "articles_checked": 9,
+          "bad_headlines": [],
+          "detail": "No bad news in 9 article(s) over the last 3 trading days."
         },
         "warnings": []
       }

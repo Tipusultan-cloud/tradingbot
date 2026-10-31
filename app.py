@@ -14,6 +14,7 @@ import time
 from project_paths import (
     BEST_CURRENT_CANDIDATE_JSON,
     MASTER_CANDIDATES_JSON,
+    MOMENTUM_SETUPS_JSON,
     PULLBACK_SETUPS_JSON,
     QUALIFIED_SETUPS_JSON,
     QUALIFIED_TOPDOWN_JSON,
@@ -31,7 +32,7 @@ from paper_journal import (
     record_exit,
 )
 from shadow_exits import get_shadow_comparison
-from slot_selector import SOURCE_A_PLUS, SOURCE_PULLBACK, max_open_trades
+from slot_selector import SOURCE_A_PLUS, SOURCE_MOMENTUM, SOURCE_PULLBACK, max_open_trades
 from broker import (
     auto_trading_status,
     get_trading_client,
@@ -339,6 +340,8 @@ def get_dashboard_data():
     slots = _read_dashboard_json(
         SLOT_SELECTION_JSON, "Slot selection", errors
     )
+    # Optional: a missing momentum scan only leaves Bot 3 idle.
+    momentum = _read_dashboard_json(MOMENTUM_SETUPS_JSON, "Momentum scan", []) or {}
 
     scan_payloads = {
         "universe": ("Universe", universe),
@@ -346,6 +349,7 @@ def get_dashboard_data():
         "topdown": ("Top-down scan", topdown),
         "master": ("Master selection", master),
         "pullback": ("Pullback scan", pullback),
+        "momentum": ("Momentum scan", momentum),
         "slots": ("Slot selection", slots),
     }
     scan_statuses = {}
@@ -570,6 +574,7 @@ def get_dashboard_data():
             "pullback_setups": pullback.get(
                 "qualified_count", len(pullback_setups)
             ),
+            "momentum_setups": momentum.get("qualified_count", 0),
             "open_paper_trades": len(paper_trades["open"]),
             "realized_pnl": paper_trades["summary"]["realized_pnl"],
         },
@@ -705,14 +710,14 @@ def find_listed_stock(ticker):
     bots = data.get("bots")
     if not isinstance(bots, dict):
         return None, None, "Slot selection has no bot lists"
-    for strategy in (SOURCE_A_PLUS, SOURCE_PULLBACK):
+    for strategy in (SOURCE_A_PLUS, SOURCE_PULLBACK, SOURCE_MOMENTUM):
         for stock in bots.get(strategy) or []:
             if (
                 isinstance(stock, dict)
                 and str(stock.get("ticker", "")).upper() == ticker
             ):
                 return stock, strategy, None
-    return None, None, f"{ticker} is not in the current Bot 1 or Bot 2 list"
+    return None, None, f"{ticker} is not in the current Bot 1, Bot 2 or Bot 3 list"
 
 
 @dashboard_app.post("/api/buy")

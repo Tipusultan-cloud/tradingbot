@@ -18,6 +18,10 @@ The half sale and the exit are recorded in the paper journal at about
 GAP_STOP, GAP_TARGET or TIME_EXIT) gets a PARTIAL+ prefix when the half
 was sold first. A TradingView SELL that arrives first still closes the
 trade as before. Nothing is sold at a broker.
+
+Bot 3 (MOMENTUM) journal-only trades use shadow_exits.py TRAIL_3ATR
+instead: the stop trails 3 ATR below the highest close, with no target
+and no time limit.
 """
 
 import sqlite3
@@ -33,6 +37,8 @@ from paper_journal import (
 from shadow_exits import NEW_YORK, entry_session_date, fetch_daily_bars, simulate
 
 EXIT_RULE = "HALF_2R_THEN_2_5R"
+# Bot 3 (momentum) rides: stop trails 3 ATR below the highest close.
+MOMENTUM_EXIT_RULE = "TRAIL_3ATR"
 
 
 def market_close_utc(exit_date):
@@ -68,7 +74,7 @@ def close_paper_trades(database_path=None, fetch=fetch_daily_bars):
             continue
 
         state = simulate(
-            EXIT_RULE,
+            MOMENTUM_EXIT_RULE if trade["strategy"] == "MOMENTUM" else EXIT_RULE,
             entry_date,
             trade["entry_price"],
             trade["stop_price"],

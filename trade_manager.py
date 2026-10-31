@@ -19,6 +19,12 @@ sync() brings the journal up to date with Alpaca:
   - a trade held 20 sessions is sold at market (TIME_EXIT), as in the
     backtests
 
+Bot 3 (MOMENTUM) trades ride instead: once the buy fills, one stop order
+(good till canceled) is placed 1.5 ATR below the entry, with no target and
+no time limit. update_trailing_stops() raises it after each completed
+day to 3 ATR below the highest close since the entry (never lowers it).
+Bot 3 uses its own MOMENTUM_SLOTS; Bot 1 and Bot 2 share MAX_OPEN_TRADES.
+
 Trades opened before 2026-10-31 hold one bracket order (stop + 2R target
 for all shares); they are still tracked through its legs.
 
@@ -44,9 +50,10 @@ from paper_journal import (
     record_partial_exit,
     update_trade_orders,
 )
-from slot_selector import max_open_trades
+from slot_selector import SOURCE_MOMENTUM, busy_by_bot, max_open_trades, momentum_slots
 
 MAX_HOLD_SESSIONS = 20
+TRAIL_ATR_MULTIPLIER = 3.0
 SOURCE_AUTO = "AUTO"
 SOURCE_MANUAL = "MANUAL"
 CANCELED_STATUSES = {"canceled", "expired", "rejected", "suspended", "stopped"}
@@ -113,6 +120,19 @@ def busy_tickers(database_path=None):
     return open_tickers + pending
 
 
+def busy_split(database_path=None):
+    """Busy tickers split into (Bot 1 / Bot 2 slots, Bot 3 slots)."""
+    initialize_journal(database_path)
+    with _connection(database_path) as connection:
+        open_trades = [
+            dict(row)
+            for row in connection.execute(
+                "SELECT ticker, strategy FROM paper_trades WHERE status = 'OPEN'"
+            )
+        ]
+    return busy_by_bot(open_trades, get_pending_broker_orders(database_path))
+
+
 def open_trade(client, stock, strategy, entry_source, price_lookup, database_path=None):
     """Send a market buy for one stock from a bot list."""
     from alpaca.trading.enums import OrderSide, TimeInForce
@@ -122,16 +142,22 @@ def open_trade(client, stock, strategy, entry_source, price_lookup, database_pat
     if not client.get_clock().is_open:
         raise TradeError("The market is closed; orders are only sent during market hours.")
 
-    busy = busy_tickers(database_path)
-    if ticker in busy:
+    main_busy, momentum_busy = busy_split(database_path)
+    if ticker in main_busy + momentum_busy:
         raise TradeError(f"{ticker} is already held or has an order waiting.")
-    slots = max_open_trades()
+    if strategy == SOURCE_MOMENTUM:
+        slots, busy, label = momentum_slots(), momentum_busy, "Bot 3"
+    else:
+        slots, busy, label = max_open_trades(), main_busy, "Bot 1 / Bot 2"
     if len(busy) >= slots:
-        raise TradeError(f"All {slots} slots are full ({len(busy)} in use).")
+        raise TradeError(f"All {slots} {label} slots are full ({len(busy)} in use).")
 
     atr = float(stock.get("atr") or 0)
     price = float(price_lookup(ticker))
     plan = plan_order(price, atr, risk_settings())
+    if strategy == SOURCE_MOMENTUM:
+        # Rides with a trailing stop; the 2R target is only for reference.
+        plan["target2"] = None
 
     order = client.submit_order(MarketOrderRequest(
         symbol=ticker,
@@ -211,6 +237,101 @@ def place_exit_orders(client, trade, database_path=None):
     return trade
 
 
+def place_momentum_stop(client, trade, database_path=None):
+    """The single stop order of a filled Bot 3 trade (no target)."""
+    from alpaca.trading.enums import OrderSide, TimeInForce
+    from alpaca.trading.requests import StopOrderRequest
+
+    if trade["rest_order_id"]:
+        return trade
+    order = client.submit_order(StopOrderRequest(
+        symbol=trade["ticker"],
+        qty=trade["shares"],
+        side=OrderSide.SELL,
+        time_in_force=TimeInForce.GTC,
+        stop_price=trade["stop_price"],
+    ))
+    return update_trade_orders(
+        trade["id"], rest_order_id=str(order.id),
+        active_stop_price=trade["stop_price"], database_path=database_path,
+    )
+
+
+def trailing_stop(entry_price, closes, atr, current_stop):
+    """3 ATR below the highest close since the entry; never lower than now."""
+    highest = max([entry_price, *closes])
+    return round(max(current_stop, highest - TRAIL_ATR_MULTIPLIER * atr), 2)
+
+
+def update_trailing_stops(client, fetch_bars, database_path=None):
+    """Raise each Bot 3 stop order after completed daily bars.
+
+    `fetch_bars(ticker, entry_date)` returns completed daily bars with
+    Close and ATR (shadow_exits.fetch_daily_bars). Returns messages.
+    """
+    from alpaca.trading.requests import ReplaceOrderRequest
+
+    from shadow_exits import entry_session_date
+
+    initialize_journal(database_path)
+    with _connection(database_path) as connection:
+        trades = [
+            dict(row)
+            for row in connection.execute(
+                "SELECT * FROM paper_trades WHERE status = 'OPEN' "
+                "AND strategy = ? AND rest_order_id IS NOT NULL",
+                (SOURCE_MOMENTUM,),
+            )
+        ]
+    messages = []
+    for trade in trades:
+        try:
+            entry_date = entry_session_date(trade["entry_time"])
+            bars = fetch_bars(trade["ticker"], entry_date)
+            held = bars[bars.index.date >= entry_date]
+            if held.empty or held["ATR"].isna().iloc[-1]:
+                continue
+            current = trade["active_stop_price"] or trade["stop_price"]
+            new_stop = trailing_stop(
+                trade["entry_price"], held["Close"].tolist(),
+                float(held["ATR"].iloc[-1]), current,
+            )
+            if new_stop <= current:
+                continue
+            order = client.replace_order_by_id(
+                trade["rest_order_id"], ReplaceOrderRequest(stop_price=new_stop)
+            )
+            update_trade_orders(
+                trade["id"], rest_order_id=str(order.id),
+                active_stop_price=new_stop, database_path=database_path,
+            )
+            messages.append(
+                f"TRAIL {trade['ticker']}: stop ${current:.2f} -> ${new_stop:.2f}"
+            )
+        except Exception as exc:  # price lookups and Alpaca errors
+            messages.append(f"Trailing stop not updated for {trade['ticker']}: {exc}")
+    return messages
+
+
+def _check_momentum_exit(client, trade, database_path):
+    """(closed trade or None, [stop order]) for a Bot 3 trade."""
+    if not trade["rest_order_id"]:
+        trade = place_momentum_stop(client, trade, database_path)
+    order = client.get_order_by_id(trade["rest_order_id"])
+    if _value(order.status) == "filled":
+        reason = (
+            "TRAIL_STOP"
+            if (trade["active_stop_price"] or 0) > trade["stop_price"]
+            else "STOP"
+        )
+        closed = close_trade(
+            trade["id"], float(order.filled_avg_price), reason,
+            _iso(order.filled_at), database_path=database_path,
+        )
+        return closed, [order]
+    return None, [order]
+
+
 def sessions_held(client, entry_time, today):
     """Completed market sessions from the entry day up to yesterday."""
     from alpaca.trading.requests import GetCalendarRequest
@@ -270,9 +391,12 @@ def sync(client, price_lookup, database_path=None, today=None, delay=1.0):
                 database_path=database_path,
             )
             result["filled"].append(trade)
-            if trade["target2_price"] is not None:
+            if trade["target2_price"] is not None or trade["strategy"] == SOURCE_MOMENTUM:
                 try:
-                    place_exit_orders(client, trade, database_path)
+                    if trade["strategy"] == SOURCE_MOMENTUM:
+                        place_momentum_stop(client, trade, database_path)
+                    else:
+                        place_exit_orders(client, trade, database_path)
                 except Exception as exc:  # retried by the next sync
                     result["errors"].append(
                         f"{trade['ticker']}: exit orders not placed yet: {exc}"
@@ -388,6 +512,10 @@ def _sync_open_trade(
     client, trade, price_lookup, database_path, today, delay, nested_request,
     halves=None,
 ):
+    if trade["strategy"] == SOURCE_MOMENTUM:
+        # Rides until the trailing stop fills: no time exit.
+        closed, _ = _check_momentum_exit(client, trade, database_path)
+        return closed
     if trade["target2_price"] is not None:
         closed, orders = _check_split_exits(
             client, trade, database_path, nested_request, halves
@@ -455,7 +583,11 @@ def sell_trade(client, ticker, price_lookup, database_path=None, delay=1.0):
         raise TradeError("The market is closed; sell when it opens")
 
     # A stop or target may have filled since the last sync.
-    if trade["target2_price"] is not None:
+    if trade["strategy"] == SOURCE_MOMENTUM:
+        closed, orders = _check_momentum_exit(client, trade, database_path)
+        if closed is not None:
+            raise TradeError(f"{ticker} already closed at its stop")
+    elif trade["target2_price"] is not None:
         closed, orders = _check_split_exits(
             client, trade, database_path, GetOrderByIdRequest
         )

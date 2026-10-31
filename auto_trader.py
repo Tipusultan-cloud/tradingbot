@@ -1,6 +1,6 @@
 """Automatic Alpaca paper trades for the bots' slot picks.
 
-  python auto_trader.py --sync   record fills and exits only
+  python auto_trader.py --sync   record fills and exits, raise Bot 3 trailing stops
   python auto_trader.py          sync, buy the slot picks, sync again,
                                  then park idle cash in SPY (cash_parking.py)
 
@@ -16,9 +16,10 @@ import time
 
 from broker import auto_trading_status, get_trading_client, latest_price
 from cash_parking import rebalance
+from shadow_exits import fetch_daily_bars
 from project_paths import SLOT_SELECTION_JSON
 from slot_selector import load_fresh
-from trade_manager import SOURCE_AUTO, TradeError, open_trade, sync
+from trade_manager import SOURCE_AUTO, TradeError, open_trade, sync, update_trailing_stops
 
 FILL_WAIT_SECONDS = 10
 
@@ -66,6 +67,8 @@ def main(argv=None):
 
     client = get_trading_client()
     print_sync(sync(client, latest_price))
+    for message in update_trailing_stops(client, fetch_daily_bars):
+        print(message)
     if "--sync" in argv:
         return 0
 
@@ -110,8 +113,12 @@ def buy_picks(client):
         print(
             f"ORDER SENT {order['ticker']} ({order['strategy']}): "
             f"{order['shares']} shares ~${order['price']:.2f}, "
-            f"stop ${order['stop']}, targets ${order['target']} (half) / "
-            f"${order['target2']} (rest)"
+            + (
+                f"stop ${order['stop']}, trailing 3 ATR, no target"
+                if order["target2"] is None
+                else f"stop ${order['stop']}, targets ${order['target']} (half) / "
+                f"${order['target2']} (rest)"
+            )
         )
 
     if placed:

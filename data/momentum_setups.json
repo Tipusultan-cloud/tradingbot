@@ -1,0 +1,31 @@
+{
+  "generated_at": "2026-10-31T17:21:37.691291+00:00",
+  "strategy": "MOMENTUM_BREAKOUT",
+  "rules": {
+    "min_jump_pct": 5.0,
+    "min_volume_ratio": 3.0,
+    "min_close_position": 0.75,
+    "trend": "Close > SMA200",
+    "universe": "S&P 500 + 200 most-traded other US stocks",
+    "exit": "trailing stop: 1.5 ATR, then 3 ATR below the highest close"
+  },
+  "stocks_scanned": 700,
+  "qualified_count": 1,
+  "qualified": [
+    {
+      "ticker": "REGN",
+      "company": "Regeneron Pharmaceuticals",
+      "sector": "Health Care",
+      "setup_type": "MOMENTUM_BREAKOUT",
+      "signal_date": "2026-10-30",
+      "momentum_rank": 1,
+      "price": 927.89,
+      "atr": 27.6421,
+      "jump_pct": 13.33,
+      "volume_ratio": 4.54,
+      "close_position": 0.92,
+      "sma200": 736.33,
+      "in_sp500": true
+    }
+  ]
+}

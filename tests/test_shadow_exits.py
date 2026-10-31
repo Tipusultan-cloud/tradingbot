@@ -173,7 +173,7 @@ class DatabaseTests(unittest.TestCase):
         record_exit("AAA", 103.0, database_path=self.database)
 
         result = update_shadow_exits(self.database, fetch=self.fetch)
-        self.assertEqual(result, {"updated": 3, "failures": []})
+        self.assertEqual(result, {"updated": 4, "failures": []})
 
         comparison = get_shadow_comparison(self.database)
         row = comparison["trades"][0]

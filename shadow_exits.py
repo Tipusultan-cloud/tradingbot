@@ -41,6 +41,8 @@ RULES = {
     "RULE_2R_20D": {"target_r": 2.0, "max_hold_days": 20},
     "HALF_2R_TRAIL": {"partial_r": 2.0, "trail_atr": 3.0},
     "HALF_2R_THEN_2_5R": {"partial_r": 2.0, "target_r": 2.5, "max_hold_days": 20},
+    # Bot 3 (momentum): no target, no time limit.
+    "TRAIL_3ATR": {"trail_atr": 3.0},
 }
 
 # Enough history before entry for a settled 14-day ATR.

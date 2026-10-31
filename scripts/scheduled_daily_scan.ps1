@@ -70,6 +70,12 @@ try {
         Write-Warning "Pullback scan failed; slots will use the A+ pick only."
     }
 
+    # Bot 3: S&P 500 + 200 most-traded US stocks that jumped on huge volume.
+    & $Python ".\scanner_momentum.py"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning "Momentum scan failed; Bot 3 buys nothing this run."
+    }
+
     & $Python ".\slot_selector.py"
     if ($LASTEXITCODE -ne 0) {
         Write-Warning "Slot selection failed; pullback BUY alerts will be rejected."
