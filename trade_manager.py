@@ -11,6 +11,9 @@ sync() brings the journal up to date with Alpaca:
   - a trade held 20 sessions is sold at market (TIME_EXIT), as in the
     backtests
 
+sell_trade() is the dashboard Sell button: it cancels the stop and target
+and sells at market (MANUAL_SELL).
+
 The Alpaca client and price lookup are passed in so tests can use fakes.
 """
 
@@ -254,7 +257,13 @@ def _sync_open_trade(client, trade, price_lookup, database_path, today, delay, n
         return None
     if not client.get_clock().is_open:
         return None
+    return _sell_at_market(
+        client, trade, legs, "TIME_EXIT", price_lookup, database_path, delay
+    )
 
+
+def _sell_at_market(client, trade, legs, reason, price_lookup, database_path, delay):
+    """Cancel the stop and target, sell the position, close the trade."""
     for leg in legs:
         if _value(leg.status) not in CANCELED_STATUSES | {"filled"}:
             client.cancel_order_by_id(leg.id)
@@ -266,7 +275,44 @@ def _sync_open_trade(client, trade, price_lookup, database_path, today, delay, n
         else float(price_lookup(trade["ticker"]))
     )
     return close_trade(
-        trade["id"], price, "TIME_EXIT",
+        trade["id"], price, reason,
         _iso(filled.filled_at if filled is not None else datetime.now(timezone.utc)),
         database_path=database_path,
+    )
+
+
+def sell_trade(client, ticker, price_lookup, database_path=None, delay=1.0):
+    """Sell an open Alpaca paper trade now, at market (dashboard Sell)."""
+    from alpaca.trading.requests import GetOrderByIdRequest
+
+    initialize_journal(database_path)
+    with _connection(database_path) as connection:
+        row = connection.execute(
+            "SELECT * FROM paper_trades WHERE ticker = ? AND status = 'OPEN' "
+            "ORDER BY id DESC LIMIT 1",
+            (ticker,),
+        ).fetchone()
+    if row is None:
+        raise TradeError(f"{ticker} has no open paper trade")
+    trade = dict(row)
+    if not trade.get("broker_order_id"):
+        raise TradeError(f"{ticker} is a journal-only trade with no Alpaca position")
+    if not client.get_clock().is_open:
+        raise TradeError("The market is closed; sell when it opens")
+
+    order = client.get_order_by_id(
+        trade["broker_order_id"], filter=GetOrderByIdRequest(nested=True)
+    )
+    legs = order.legs or []
+    # The stop or target may have filled since the last sync.
+    for leg in legs:
+        if _value(leg.status) == "filled":
+            reason = "TARGET" if _value(leg.type) == "limit" else "STOP"
+            close_trade(
+                trade["id"], float(leg.filled_avg_price), reason,
+                _iso(leg.filled_at), database_path=database_path,
+            )
+            raise TradeError(f"{ticker} already closed at its {reason.lower()}")
+    return _sell_at_market(
+        client, trade, legs, "MANUAL_SELL", price_lookup, database_path, delay
     )

@@ -221,6 +221,87 @@ time. The exact final one-trade-per-week strategy has **not** been backtested.
 
 ## 5. Activity Log (newest first)
 
+### 2026-10-30 — Sell button for open trades
+
+**What:** Each open Alpaca paper trade in the dashboard's Open paper
+positions table has a **Sell** button. It asks for confirmation, then sells
+the whole position at market; the trade closes with exit reason
+`MANUAL_SELL` ("Sold (button)") and its slot is freed.
+
+**Why:** Trades could only close at the stop, the 2R target or after 20
+days; there was no way to get out by hand (e.g. FTNT after its bad news).
+
+**How:** `trade_manager.sell_trade` cancels the bracket's stop and target,
+calls Alpaca `close_position`, waits for the fill and records it (shared
+with the 20-day exit). If the stop or target already filled, that exit is
+recorded instead of selling again. Refused when the market is closed, for
+journal-only trades, or when auto trading is off. `POST /api/sell` uses the
+same local-dashboard-only check as `/api/buy`. 208 tests pass.
+
+### 2026-10-30 — More color on the dashboard
+
+**What:** Each panel and metric tile has its own accent color (colored top
+border, tinted header, glowing dot), gradient title and logo, colored Buy
+buttons, a gold highlight on the 👑 row, and green/red realized P&L.
+
+**Why:** Asked for a more colorful dashboard; colors also tell sections
+apart (Bot 1 gold, Bot 2 violet, positions green).
+
+**How:** CSS only in `web/dashboard.html` (an `--accent` color per panel via
+`accent-*` classes), plus a `crowned` row class and P&L sign class in the
+render code. No data or behavior changed.
+
+### 2026-10-30 — Live profit/loss for open trades on the dashboard
+
+**What:** New "Open P/L (live)" tile, and Now / P/L / P/L % columns in the
+Open paper positions table.
+
+**Why:** The dashboard only showed realized P&L, so open trades (MPC, FTNT)
+had no running result.
+
+**How:** `app.mark_open_trades` uses the live Alpaca price (same one-a-minute
+request as the bot lists) to add `live_price`, `unrealized_pnl` and
+`unrealized_pct` to each open trade and `open_pnl` to the totals. Needs auto
+trading on (Alpaca keys); otherwise the fields show "—". First reading:
+FTNT -$2.88, MPC -$11.55, total -$14.43. 200 tests pass.
+
+### 2026-10-30 — Warnings on listed stocks; crown on the top clean stock
+
+**What:** Every stock in the Bot 1 / Bot 2 lists gets red warning badges, and
+👑 marks the highest-ranked stock in each list with no warning. The earnings
+warning window went from 5 to 10 trading days (2 weeks), for A+ too.
+
+**Why:** Bot 2 ranks only by 6-month return, so its #1 (MPC) had earnings in
+2 days and #2 (FTNT) had just crashed on bad news. The crown should point at
+a stock you could actually take.
+
+**How:** `earnings_calendar.check_earnings` also returns the last report
+date. `slot_selector.stock_warnings` adds: earnings within 2 weeks; bad news,
+or "bad earnings" when a headline is an earnings miss or guidance cut; "fell
+after earnings" for a pullback that reported in the last 5 sessions; and a
+warning when a lookup failed. The slot selector now checks every listed
+stock, not just the slot picks. The dashboard (`app.mark_bot_list`) adds the
+live Alpaca price (one request, at most once a minute), a "below stop"
+warning, and the crown. Display only: picks and auto-buys still follow the
+rank, because none of these checks was in the pullback backtest. First run:
+👑 WDAY; MPC earnings in 2d, FTNT bad news + fell after earnings, HPQ below
+stop. 198 tests pass.
+
+### 2026-10-30 — Alpaca paper account connected, auto trading switched on
+
+**What:** Real Alpaca paper API keys put in `.env` (they were still the
+template placeholders) and `AUTO_TRADING=true` set. No code changed.
+
+**Why:** Without valid keys the news check marked every stock `UNKNOWN`, and
+with auto trading off the dashboard hid its Buy buttons.
+
+**How:** Read-only test: paper account ACTIVE, $100,000 equity, no positions
+or orders; Alpaca market data returns prices. The dashboard now reports
+"Alpaca paper trading" and shows Buy buttons (Bot 2 had 10 pullbacks, Bot 1
+none). Trade size still comes from `PAPER_ACCOUNT_BALANCE=10000` (1% = $100
+risk), not the Alpaca balance. The scan's auto-buy step runs from the next
+scheduled scan.
+
 ### 2026-10-29 — Automatic trading on Alpaca paper + dashboard Buy buttons
 - **What:** Optional automatic trading for Bot 1 and Bot 2 on an Alpaca
   **paper** account. New `broker.py` (Alpaca connection; refuses anything

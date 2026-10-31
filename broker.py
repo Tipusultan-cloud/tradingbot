@@ -53,3 +53,20 @@ def latest_price(ticker):
         StockLatestTradeRequest(symbol_or_symbols=ticker)
     )
     return float(trades[ticker].price)
+
+
+def latest_prices(tickers):
+    """{ticker: last traded price} for many tickers in one request."""
+    from alpaca.data.historical.stock import StockHistoricalDataClient
+    from alpaca.data.requests import StockLatestTradeRequest
+
+    if not tickers:
+        return {}
+    client = StockHistoricalDataClient(
+        os.environ["ALPACA_API_KEY"].strip(),
+        os.environ["ALPACA_API_SECRET"].strip(),
+    )
+    trades = client.get_stock_latest_trade(
+        StockLatestTradeRequest(symbol_or_symbols=sorted(set(tickers)))
+    )
+    return {ticker: float(trade.price) for ticker, trade in trades.items()}

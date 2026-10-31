@@ -32,9 +32,14 @@ from paper_journal import (
 )
 from shadow_exits import get_shadow_comparison
 from slot_selector import SOURCE_A_PLUS, SOURCE_PULLBACK, max_open_trades
-from broker import auto_trading_status, get_trading_client, latest_price
+from broker import (
+    auto_trading_status,
+    get_trading_client,
+    latest_price,
+    latest_prices,
+)
 from paper_journal import get_pending_broker_orders
-from trade_manager import SOURCE_MANUAL, TradeError, open_trade
+from trade_manager import SOURCE_MANUAL, TradeError, open_trade, sell_trade
 from trade_manager import sync as broker_sync
 
 
@@ -118,6 +123,8 @@ MAX_OPEN_TRADES = max_open_trades()
 # Dashboard refreshes sync Alpaca fills and exits at most this often.
 BROKER_SYNC_SECONDS = 60
 _last_broker_sync = 0.0
+LIVE_PRICE_SECONDS = 60
+_live_prices = {"at": 0.0, "tickers": (), "prices": {}}
 
 # The Buy button only works from the local dashboard page.
 DASHBOARD_ORIGINS = {
@@ -513,6 +520,23 @@ def get_dashboard_data():
             "message": f"Could not load paper journal or CSV export: {exc}",
         })
 
+    if not isinstance(slot_summary["bots"], dict):
+        slot_summary["bots"] = {}
+    listed = [
+        stock
+        for rows in slot_summary["bots"].values() if isinstance(rows, list)
+        for stock in rows if isinstance(stock, dict)
+    ]
+    prices = _live_prices_for(
+        [stock.get("ticker") for stock in listed + paper_trades["open"]],
+        broker["enabled"],
+        errors,
+    )
+    for rows in slot_summary["bots"].values():
+        if isinstance(rows, list):
+            mark_bot_list(rows, prices)
+    paper_trades["open_pnl"] = mark_open_trades(paper_trades["open"], prices)
+
     try:
         shadow_exits = get_shadow_comparison()
     except (OSError, sqlite3.Error) as exc:
@@ -581,6 +605,82 @@ def _broker_state(errors):
     return {"enabled": enabled, "reason": reason, "pending_orders": pending}
 
 
+def _live_prices_for(tickers, enabled, errors):
+    """Last Alpaca prices for listed and held stocks, at most once a minute."""
+    if not enabled:
+        return {}
+    tickers = tuple(sorted({ticker for ticker in tickers if ticker}))
+    if not tickers:
+        return {}
+    if (
+        tickers == _live_prices["tickers"]
+        and time.monotonic() - _live_prices["at"] < LIVE_PRICE_SECONDS
+    ):
+        return _live_prices["prices"]
+    try:
+        prices = latest_prices(tickers)
+    except Exception as exc:  # network and API errors
+        errors.append({
+            "source": "Alpaca",
+            "message": f"Could not load live prices: {exc}",
+        })
+        return {}
+    _live_prices.update(at=time.monotonic(), tickers=tickers, prices=prices)
+    return prices
+
+
+def mark_bot_list(rows, prices):
+    """Add live price and a below-stop warning; crown the top clean stock.
+
+    Clean means no warning from the scan (slot_selector.stock_warnings)
+    and, when a live price is known, still above the planned stop.
+    Display only: the bots' own picks follow their rank.
+    """
+    crowned = False
+    for stock in rows:
+        if not isinstance(stock, dict):
+            continue
+        warnings = list(stock.get("warnings") or [])
+        price = prices.get(stock.get("ticker"))
+        stop = (stock.get("risk_preview") or {}).get("stop")
+        stock["live_price"] = price
+        if price is not None and stop is not None and price <= stop:
+            warnings.append({
+                "code": "BELOW_STOP",
+                "label": "Below stop",
+                "detail": (
+                    f"Now ${price:.2f}, under the planned stop "
+                    f"${stop:.2f}; the dip kept falling."
+                ),
+            })
+        stock["warnings"] = warnings
+        stock["crown"] = not crowned and not warnings
+        crowned = crowned or stock["crown"]
+    return rows
+
+
+def mark_open_trades(trades, prices):
+    """Add live price and unrealized P/L to open trades; return the total.
+
+    The total is None when no open trade has a live price.
+    """
+    total = None
+    for trade in trades:
+        price = prices.get(trade.get("ticker"))
+        trade["live_price"] = price
+        trade["unrealized_pnl"] = None
+        trade["unrealized_pct"] = None
+        entry = trade.get("entry_price")
+        shares = trade.get("shares")
+        if price is None or not entry or not shares:
+            continue
+        pnl = round((price - entry) * shares, 2)
+        trade["unrealized_pnl"] = pnl
+        trade["unrealized_pct"] = round((price / entry - 1) * 100, 2)
+        total = round((total or 0) + pnl, 2)
+    return total
+
+
 def find_listed_stock(ticker):
     """(stock, strategy) from the fresh Bot 1 / Bot 2 lists, or an error."""
     data, error = _load_fresh_result(SLOT_SELECTION_JSON, "Slot selection")
@@ -640,6 +740,50 @@ async def dashboard_buy(request: Request):
             detail=f"Alpaca did not accept the order: {exc}",
         ) from exc
     return {"status": "order_sent", **order}
+
+
+@dashboard_app.post("/api/sell")
+async def dashboard_sell(request: Request):
+    # Same local-dashboard-only check as /api/buy.
+    if (
+        request.headers.get("origin") not in DASHBOARD_ORIGINS
+        or request.headers.get("x-tradingbot") != "dashboard"
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Sell requests are only accepted from the local dashboard",
+        )
+
+    try:
+        data = await request.json()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Body must be JSON") from exc
+    ticker = str((data or {}).get("ticker", "")).upper().strip()
+    if not ticker:
+        raise HTTPException(status_code=400, detail="Ticker is missing")
+
+    enabled, reason = auto_trading_status()
+    if not enabled:
+        raise HTTPException(status_code=409, detail=reason)
+
+    try:
+        trade = sell_trade(get_trading_client(), ticker, latest_price)
+    except TradeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception as exc:  # Alpaca rejections and network errors
+        raise HTTPException(
+            status_code=502,
+            detail=f"Alpaca did not accept the sell: {exc}",
+        ) from exc
+    if trade is None:
+        raise HTTPException(status_code=409, detail=f"{ticker} is no longer open")
+    return {
+        "status": "sold",
+        "ticker": trade["ticker"],
+        "shares": trade["shares"],
+        "exit_price": trade["exit_price"],
+        "realized_pnl": trade["realized_pnl"],
+    }
 
 
 @dashboard_app.get("/", response_class=FileResponse)

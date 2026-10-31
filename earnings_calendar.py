@@ -2,7 +2,7 @@
 
 A swing trade held 5-15 days can run into an earnings report, and the
 overnight gap can jump past the ATR stop. Candidates with earnings inside
-the warning window are flagged EARNINGS_SOON so the gap risk is reviewed
+the warning window (2 weeks) are flagged EARNINGS_SOON so the gap risk is reviewed
 before acting. They are NOT rejected: the 2026-10-21 backtest
 (backtests/backtest_earnings_blackout.py) showed a hard block cut the
 7-year return from 33.9% to 17.7%. A failed lookup is reported as UNKNOWN.
@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 
 import numpy as np
 
-EARNINGS_WARNING_TRADING_DAYS = 5
+EARNINGS_WARNING_TRADING_DAYS = 10
 EARNINGS_LOOKUP_LIMIT = 8
 MARKET_TIMEZONE = ZoneInfo("America/New_York")
 
@@ -56,6 +56,8 @@ def check_earnings(
         "status": STATUS_UNKNOWN,
         "next_earnings_date": None,
         "trading_days_until": None,
+        "last_earnings_date": None,
+        "trading_days_since": None,
         "warning_trading_days": warning_days,
         "detail": "",
     }
@@ -65,6 +67,16 @@ def check_earnings(
     except Exception as exc:  # yfinance raises many unrelated error types
         result["detail"] = f"Earnings lookup failed: {exc}"
         return result
+
+    past = [
+        earnings_date
+        for earnings_date in dates
+        if isinstance(earnings_date, date) and earnings_date < as_of
+    ]
+    if past:
+        last_date = max(past)
+        result["last_earnings_date"] = last_date.isoformat()
+        result["trading_days_since"] = trading_days_until(last_date, as_of)
 
     upcoming = [
         earnings_date

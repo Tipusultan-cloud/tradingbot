@@ -235,6 +235,58 @@ class SyncTests(JournalCase):
         self.assertEqual(result, {"closed": [], "still_open": [], "failures": []})
 
 
+class SellTests(JournalCase):
+    def filled_trade(self):
+        self.buy()
+        self.client.fill("order-1", 100.0, 33)
+        self.sync()
+        return self.client.orders["order-1"]
+
+    def sell(self, ticker="ABC"):
+        return trade_manager.sell_trade(
+            self.client, ticker, lambda ticker: 104.0,
+            database_path=self.database, delay=0,
+        )
+
+    def test_sell_cancels_stop_and_target_and_sells_at_market(self):
+        self.filled_trade()
+
+        closed = self.sell()
+
+        self.assertEqual(self.client.canceled, ["tp-1", "sl-1"])
+        self.assertEqual(self.client.closed, ["ABC"])
+        self.assertEqual(closed["exit_reason"], "MANUAL_SELL")
+        self.assertAlmostEqual(closed["realized_pnl"], 132.0)
+        self.assertEqual(get_paper_trades(database_path=self.database)["open"], [])
+
+    def test_market_closed_sells_nothing(self):
+        self.filled_trade()
+        self.client.market_open = False
+        with self.assertRaisesRegex(TradeError, "market is closed"):
+            self.sell()
+        self.assertEqual(self.client.closed, [])
+
+    def test_stop_already_filled_is_recorded_not_sold_again(self):
+        order = self.filled_trade()
+        order.legs[1] = leg("sl-1", "stop", "filled", 96.9, "2026-10-30T15:00:00Z")
+
+        with self.assertRaisesRegex(TradeError, "already closed at its stop"):
+            self.sell()
+
+        self.assertEqual(self.client.closed, [])
+        closed = get_paper_trades(database_path=self.database)["recent"][0]
+        self.assertEqual(closed["exit_reason"], "STOP")
+
+    def test_no_open_trade(self):
+        with self.assertRaisesRegex(TradeError, "no open paper trade"):
+            self.sell("XYZ")
+
+    def test_journal_only_trade_is_refused(self):
+        record_entry("JRN", 50, 1, 10, 48, 54, database_path=self.database)
+        with self.assertRaisesRegex(TradeError, "journal-only"):
+            self.sell("JRN")
+
+
 class StatusTests(unittest.TestCase):
     def status(self, **env):
         values = {"AUTO_TRADING": "", "ALPACA_PAPER": "", "ALPACA_API_KEY": "",
@@ -346,6 +398,49 @@ class DashboardBuyTests(JournalCase):
         with self.assertRaises(HTTPException) as caught:
             self.post("VLO")
         self.assertIn("market is closed", caught.exception.detail)
+
+
+class DashboardSellTests(JournalCase):
+    def setUp(self):
+        super().setUp()
+        self.patches = [
+            patch.object(app, "auto_trading_status", return_value=(True, "on")),
+            patch.object(app, "get_trading_client", return_value=self.client),
+            patch.object(app, "latest_price", lambda ticker: 104.0),
+            patch.dict(os.environ, {"PAPER_JOURNAL_PATH": str(self.database)}),
+        ]
+        for item in self.patches:
+            item.start()
+
+    def tearDown(self):
+        for item in reversed(self.patches):
+            item.stop()
+        super().tearDown()
+
+    def post(self, ticker, headers=GOOD_HEADERS):
+        return asyncio.run(app.dashboard_sell(FakeRequest({"ticker": ticker}, headers)))
+
+    def test_sell_button_sells_open_trade(self):
+        self.buy()
+        self.client.fill("order-1", 100.0, 33)
+        self.sync()
+
+        result = self.post("abc")
+
+        self.assertEqual(result["status"], "sold")
+        self.assertEqual((result["ticker"], result["shares"]), ("ABC", 33))
+        self.assertAlmostEqual(result["realized_pnl"], 132.0)
+
+    def test_other_websites_are_refused(self):
+        with self.assertRaises(HTTPException) as caught:
+            self.post("ABC", {"origin": "https://evil.example", "x-tradingbot": "dashboard"})
+        self.assertEqual(caught.exception.status_code, 403)
+        self.assertEqual(self.client.closed, [])
+
+    def test_unknown_ticker_is_refused(self):
+        with self.assertRaises(HTTPException) as caught:
+            self.post("XYZ")
+        self.assertEqual(caught.exception.status_code, 409)
 
 
 class WebhookWhileAutoTradingTests(unittest.TestCase):

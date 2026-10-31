@@ -165,7 +165,7 @@ blocked. Backtest: `backtests/backtest_bad_news_block.py`.
 
 **Earnings warning (not a rule):** `earnings_calendar.py` looks up the
 selected stock's next earnings date from Yahoo Finance and marks it
-`EARNINGS_SOON` when it is within 5 trading days, `CLEAR` otherwise, or
+`EARNINGS_SOON` when it is within 10 trading days (2 weeks), `CLEAR` otherwise, or
 `UNKNOWN` if the lookup fails. The status appears on the dashboard and in the
 email; review the gap risk before acting. It does not reject the stock: a
 backtest of a hard block (`backtests/backtest_earnings_blackout.py`) lowered
@@ -218,7 +218,13 @@ panel, and the email.
 strategy so you can pick by hand: **Bot 1 · A+** (every stock passing all A+
 rules) and **Bot 2 · Leader pullback** (up to 20 pullbacks), each with entry
 reference, stop, target and shares, and with the bot's own picks and held
-stocks flagged. The lists are shown on the dashboard (with each bot's paper
+stocks flagged. Every listed stock is checked and gets red warning badges
+for: earnings within 2 weeks, bad news, bad earnings (a miss or guidance
+cut in the headlines), a drop right after an earnings report (reported in
+the last 5 sessions), a failed lookup, or a live price already below the
+planned stop. The 👑 marks the highest-ranked stock in each list with no
+warning. Warnings and the crown are display only; the bots' own picks and
+auto-buys still follow the rank. The lists are shown on the dashboard (with each bot's paper
 results: trades, open, win rate, realized P&L), in the email, and at the end
 of the scan window. A BUY alert is confirmed for any stock in either list
 while a slot is free. Paper journal entries record which strategy opened
@@ -260,6 +266,9 @@ Position sizing is calculated from the stop distance and maximum account risk.
 - Fills and stop/target exits are copied into the journal (`entry_source`
   `AUTO` or `MANUAL`) by `auto_trader.py --sync` and by dashboard refreshes
   (at most once a minute). A trade held 20 sessions is sold at market.
+- Each open trade has a **Sell** button on the dashboard: it cancels the
+  stop and target and sells the whole position at market (`MANUAL_SELL`),
+  only while the market is open.
 - Orders waiting to fill hold a slot. TradingView alerts are ignored while
   auto trading is on, so the journal always matches the Alpaca account.
 - A live (real-money) Alpaca account is refused; there is no setting for it.
@@ -390,7 +399,8 @@ The dashboard is read-only, refreshes every 30 seconds, and has a manual data
 refresh button that does not start a scan. It reports missing, invalid, or
 stale scan artifacts as warnings rather than presenting them as healthy. The
 paper journal separates open positions from closed history and summarizes
-realized P&L and estimated risk to recorded stops; stops and targets are
+realized P&L, live unrealized P/L for open trades (Alpaca price, when
+auto trading is on) and estimated risk to recorded stops; stops and targets are
 checked once a day by the scan (see Automatic paper exits). It also keeps `data/paper_trades.csv` synchronized
 with recorded entries and exits. Use **Download all trades (CSV)** to get the
 complete journal in Excel-friendly format. SQLite remains the source of truth;

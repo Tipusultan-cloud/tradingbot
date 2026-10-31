@@ -249,6 +249,103 @@ class SlotSelectorMainTests(unittest.TestCase):
         self.assertEqual(payload["selections"][0]["news"]["status"], "UNKNOWN")
 
 
+CLEAR_EARNINGS = {"status": "CLEAR", "trading_days_since": 40}
+CLEAR_NEWS = {"status": "CLEAR"}
+
+
+def listed(ticker, earnings=CLEAR_EARNINGS, news=CLEAR_NEWS, stop=90.0):
+    stock = {
+        "ticker": ticker,
+        "source": "PULLBACK",
+        "earnings": earnings,
+        "news": news,
+        "risk_preview": {"stop": stop},
+    }
+    stock["warnings"] = slot_selector.stock_warnings(stock)
+    return stock
+
+
+def codes(stock):
+    return [warning["code"] for warning in stock["warnings"]]
+
+
+class StockWarningTests(unittest.TestCase):
+    def test_clean_stock_has_no_warnings(self):
+        self.assertEqual(codes(listed("OK")), [])
+
+    def test_earnings_within_two_weeks(self):
+        stock = listed("E", earnings={
+            "status": "EARNINGS_SOON", "trading_days_until": 8, "detail": "x",
+        })
+        self.assertEqual(codes(stock), ["EARNINGS_SOON"])
+        self.assertEqual(stock["warnings"][0]["label"], "Earnings in 8d")
+
+    def test_drop_right_after_earnings(self):
+        stock = listed("E", earnings={
+            "status": "CLEAR", "trading_days_since": 2,
+            "last_earnings_date": "2026-10-28",
+        })
+        self.assertEqual(codes(stock), ["FELL_AFTER_EARNINGS"])
+
+    def test_earnings_miss_is_bad_earnings(self):
+        stock = listed("B", news={
+            "status": "BAD_NEWS", "detail": "miss",
+            "bad_headlines": [{"category": "earnings_miss"}],
+        })
+        self.assertEqual(codes(stock), ["BAD_EARNINGS"])
+
+    def test_other_bad_headline_is_bad_news(self):
+        stock = listed("B", news={
+            "status": "BAD_NEWS", "detail": "plunge",
+            "bad_headlines": [{"category": "price_drop"}],
+        })
+        self.assertEqual(codes(stock), ["BAD_NEWS"])
+
+    def test_failed_lookups_are_not_clean(self):
+        stock = listed("U", earnings={"status": "UNKNOWN"}, news={"status": "UNKNOWN"})
+        self.assertEqual(codes(stock), ["EARNINGS_UNKNOWN", "NEWS_UNKNOWN"])
+
+
+class CrownTests(unittest.TestCase):
+    def test_crown_goes_to_top_clean_stock(self):
+        rows = [
+            listed("SOON", earnings={"status": "EARNINGS_SOON", "trading_days_until": 2}),
+            listed("FELL", stop=30.0),
+            listed("GOOD"),
+            listed("ALSO"),
+        ]
+        app.mark_bot_list(rows, {"FELL": 28.9, "GOOD": 200.5})
+
+        self.assertEqual([stock["ticker"] for stock in rows if stock["crown"]], ["GOOD"])
+        self.assertEqual(codes(rows[1]), ["BELOW_STOP"])
+        self.assertEqual(rows[2]["live_price"], 200.5)
+
+    def test_no_crown_when_every_stock_has_a_warning(self):
+        rows = [listed("U", news={"status": "UNKNOWN"})]
+        app.mark_bot_list(rows, {})
+        self.assertFalse(rows[0]["crown"])
+
+
+class OpenPnlTests(unittest.TestCase):
+    def test_unrealized_pnl_from_live_price(self):
+        trades = [
+            {"ticker": "UP", "entry_price": 100.0, "shares": 3},
+            {"ticker": "DOWN", "entry_price": 50.0, "shares": 10},
+            {"ticker": "NOPRICE", "entry_price": 20.0, "shares": 5},
+        ]
+        total = app.mark_open_trades(trades, {"UP": 110.0, "DOWN": 49.0})
+
+        self.assertEqual(trades[0]["unrealized_pnl"], 30.0)
+        self.assertEqual(trades[0]["unrealized_pct"], 10.0)
+        self.assertEqual(trades[1]["unrealized_pnl"], -10.0)
+        self.assertIsNone(trades[2]["unrealized_pnl"])
+        self.assertEqual(total, 20.0)
+
+    def test_no_prices_means_no_total(self):
+        trades = [{"ticker": "X", "entry_price": 10.0, "shares": 1}]
+        self.assertIsNone(app.mark_open_trades(trades, {}))
+
+
 class JournalStrategyTests(unittest.TestCase):
     def test_strategy_is_stored_and_open_trades_counted(self):
         with tempfile.TemporaryDirectory() as folder:

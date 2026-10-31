@@ -41,10 +41,11 @@ class CheckEarningsTests(unittest.TestCase):
         self.assertEqual(result["trading_days_until"], 4)
 
     def test_blocks_on_last_day_of_window(self):
+        # 2 weeks: Wednesday -> Wednesday two weeks later.
         result = check_earnings(
-            "XOM", as_of=AS_OF, fetch=dates(date(2026, 10, 28))
+            "XOM", as_of=AS_OF, fetch=dates(date(2026, 11, 4))
         )
-        self.assertEqual(result["trading_days_until"], 5)
+        self.assertEqual(result["trading_days_until"], 10)
         self.assertEqual(result["status"], STATUS_SOON)
 
     def test_blocks_earnings_today(self):
@@ -53,10 +54,10 @@ class CheckEarningsTests(unittest.TestCase):
 
     def test_clear_outside_window(self):
         result = check_earnings(
-            "AAPL", as_of=AS_OF, fetch=dates(date(2026, 11, 2))
+            "AAPL", as_of=AS_OF, fetch=dates(date(2026, 11, 5))
         )
         self.assertEqual(result["status"], STATUS_CLEAR)
-        self.assertEqual(result["trading_days_until"], 8)
+        self.assertEqual(result["trading_days_until"], 11)
 
     def test_ignores_past_dates_and_uses_next_one(self):
         result = check_earnings(
@@ -67,6 +68,17 @@ class CheckEarningsTests(unittest.TestCase):
             ),
         )
         self.assertEqual(result["next_earnings_date"], "2026-11-02")
+
+    def test_reports_last_past_earnings_date(self):
+        result = check_earnings(
+            "AAPL",
+            as_of=AS_OF,
+            fetch=dates(
+                date(2026, 7, 30), date(2026, 10, 19), date(2027, 1, 28)
+            ),
+        )
+        self.assertEqual(result["last_earnings_date"], "2026-10-19")
+        self.assertEqual(result["trading_days_since"], 2)
 
     def test_no_upcoming_date_is_unknown(self):
         result = check_earnings(

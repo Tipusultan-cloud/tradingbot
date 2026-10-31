@@ -9,7 +9,10 @@ be picked by hand. The webhook approves a pullback BUY for any stock in
 the Bot 2 list. Nothing is ordered automatically.
 
 Earnings and news are shown as warnings for pullbacks; neither was part
-of the pullback backtest, so neither blocks a pullback.
+of the pullback backtest, so neither blocks a pullback. Every listed
+stock gets warnings (earnings within 2 weeks, bad news or bad earnings,
+a drop right after earnings); the dashboard crowns the top stock with
+none.
 """
 
 import json
@@ -33,6 +36,11 @@ MAX_SOURCE_AGE_HOURS = 36
 
 SOURCE_A_PLUS = "A_PLUS"
 SOURCE_PULLBACK = "PULLBACK"
+
+# A pullback is a >5% drop over 5 sessions; earnings inside that window
+# probably caused it.
+RECENT_EARNINGS_TRADING_DAYS = 5
+BAD_EARNINGS_CATEGORIES = {"earnings_miss", "guidance_cut"}
 
 
 def max_open_trades():
@@ -154,6 +162,63 @@ def build_bot_lists(master, pullbacks, open_tickers, selections):
     return lists
 
 
+def stock_warnings(stock):
+    """Warnings shown next to a listed stock; none means it is clean.
+
+    Warnings only: none of them was part of the pullback backtest, so
+    they never stop a stock being picked or bought.
+    """
+    warnings = []
+    earnings = stock.get("earnings") or {}
+    news = stock.get("news") or {}
+
+    if earnings.get("status") == "EARNINGS_SOON":
+        warnings.append({
+            "code": "EARNINGS_SOON",
+            "label": f"Earnings in {earnings.get('trading_days_until')}d",
+            "detail": earnings.get("detail", ""),
+        })
+    elif earnings.get("status") != "CLEAR":
+        warnings.append({
+            "code": "EARNINGS_UNKNOWN",
+            "label": "Earnings not checked",
+            "detail": earnings.get("detail") or "Earnings lookup unavailable.",
+        })
+
+    days_since = earnings.get("trading_days_since")
+    if (
+        stock.get("source") == SOURCE_PULLBACK
+        and days_since is not None
+        and days_since <= RECENT_EARNINGS_TRADING_DAYS
+    ):
+        warnings.append({
+            "code": "FELL_AFTER_EARNINGS",
+            "label": "Fell after earnings",
+            "detail": (
+                f"Reported earnings on {earnings.get('last_earnings_date')}; "
+                "this week's drop may be the market's reaction."
+            ),
+        })
+
+    if news.get("status") == "BAD_NEWS":
+        categories = {
+            item.get("category") for item in news.get("bad_headlines") or []
+        }
+        bad_earnings = bool(categories & BAD_EARNINGS_CATEGORIES)
+        warnings.append({
+            "code": "BAD_EARNINGS" if bad_earnings else "BAD_NEWS",
+            "label": "Bad earnings" if bad_earnings else "Bad news",
+            "detail": news.get("detail", ""),
+        })
+    elif news.get("status") != "CLEAR":
+        warnings.append({
+            "code": "NEWS_UNKNOWN",
+            "label": "News not checked",
+            "detail": news.get("detail") or "News lookup unavailable.",
+        })
+    return warnings
+
+
 def print_bot_list(title, rows):
     print()
     print(f"{title}: {len(rows)} stock(s)")
@@ -180,6 +245,8 @@ def print_bot_list(title, rows):
             f"target ${risk.get('target', '?')} "
             f"shares {risk.get('shares', '?')}{flags}"
         )
+        for warning in stock.get("warnings") or []:
+            print(f"      ! {warning['label']}: {warning['detail']}")
 
 
 def main():
@@ -205,11 +272,24 @@ def main():
         max_slots=max_open_trades(),
     )
 
-    # A+ picks already carry these checks from master_selector.py.
-    for stock in selection["selections"]:
-        if stock["source"] == SOURCE_PULLBACK:
-            stock["earnings"] = check_earnings(stock["ticker"])
-            stock["news"] = check_news(stock["ticker"])
+    bots = build_bot_lists(
+        master=master,
+        pullbacks=pullbacks,
+        open_tickers=open_tickers,
+        selections=selection["selections"],
+    )
+
+    # A+ stocks already carry these checks from master_selector.py.
+    # One lookup per ticker, shared by the slot picks and the lists.
+    checks = {}
+    for stock in [*selection["selections"], *bots[SOURCE_A_PLUS], *bots[SOURCE_PULLBACK]]:
+        ticker = stock["ticker"]
+        if "earnings" in stock and "news" in stock:
+            checks.setdefault(ticker, (stock["earnings"], stock["news"]))
+        if ticker not in checks:
+            checks[ticker] = (check_earnings(ticker), check_news(ticker))
+        stock["earnings"], stock["news"] = checks[ticker]
+        stock["warnings"] = stock_warnings(stock)
 
     if selection["selections"]:
         status = "SLOTS TO FILL"
@@ -217,13 +297,6 @@ def main():
         status = "ALL SLOTS FULL"
     else:
         status = "WAIT"
-
-    bots = build_bot_lists(
-        master=master,
-        pullbacks=pullbacks,
-        open_tickers=open_tickers,
-        selections=selection["selections"],
-    )
 
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
