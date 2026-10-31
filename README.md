@@ -358,6 +358,7 @@ TradingBot/
 ├── app.py                     # Webhook API and dashboard data
 ├── auto_trader.py             # Buys slot picks on Alpaca paper, syncs fills
 ├── broker.py                  # Alpaca paper connection (paper only)
+├── cash_parking.py            # Keeps half of idle cash in SPY
 ├── earnings_calendar.py       # Next-earnings-date warning
 ├── master_selector.py         # Applies the final strict rules
 ├── news_checker.py            # Bad-news headline block (Alpaca News API)
