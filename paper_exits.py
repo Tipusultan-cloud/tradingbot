@@ -1,30 +1,38 @@
-"""Automatic paper exits: close open paper trades at stop, target or 20 days.
+"""Automatic paper exits: half at 2R, the rest at 2.5R, stop or 20 days.
 
 Runs in the daily scan before slot_selector.py, so a slot freed by an
 exit can be refilled the same morning. Each open trade is replayed on
 completed daily bars with the backtested rule (shadow_exits.py
-RULE_2R_20D):
+HALF_2R_THEN_2_5R):
 
   - stop: the recorded stop price (entry - 1.5 ATR)
-  - target: 2R above entry
+  - first target: half the shares are sold at 2R above entry, and the
+    stop of the rest moves up to the entry price
+  - second target: the rest are sold at 2.5R above entry
   - time exit: at the close of the 20th session held
-  - the stop is checked before the target; a gap through either fills
+  - the stop is checked before the targets; a gap through a level fills
     at the open; the entry day's high and low are skipped
 
-The exit is recorded in the paper journal with the rule's reason
-(STOP, TARGET, GAP_STOP, GAP_TARGET or TIME_EXIT) at about 4 PM New
-York time on the exit day. A TradingView SELL that arrives first still
-closes the trade as before. Nothing is sold at a broker.
+The half sale and the exit are recorded in the paper journal at about
+4 PM New York time on their day. The exit reason (STOP, TARGET,
+GAP_STOP, GAP_TARGET or TIME_EXIT) gets a PARTIAL+ prefix when the half
+was sold first. A TradingView SELL that arrives first still closes the
+trade as before. Nothing is sold at a broker.
 """
 
 import sqlite3
 import sys
 from datetime import date, datetime, time as clock_time, timezone
 
-from paper_journal import _connection, close_trade, initialize_journal
+from paper_journal import (
+    _connection,
+    close_trade,
+    initialize_journal,
+    record_partial_exit,
+)
 from shadow_exits import NEW_YORK, entry_session_date, fetch_daily_bars, simulate
 
-EXIT_RULE = "RULE_2R_20D"
+EXIT_RULE = "HALF_2R_THEN_2_5R"
 
 
 def market_close_utc(exit_date):
@@ -45,6 +53,7 @@ def close_paper_trades(database_path=None, fetch=fetch_daily_bars):
         ).fetchall()
 
     closed = []
+    halves = []
     still_open = []
     failures = []
     for trade in trades:
@@ -66,6 +75,17 @@ def close_paper_trades(database_path=None, fetch=fetch_daily_bars):
             trade["shares"],
             bars,
         )
+        if state["partial_shares"] and trade["partial_exit_price"] is None:
+            half = record_partial_exit(
+                trade["id"],
+                state["partial_shares"],
+                state["partial_price"],
+                market_close_utc(state["partial_date"]),
+                active_stop_price=trade["entry_price"],
+                database_path=database_path,
+            )
+            if half is not None:
+                halves.append(half)
         if state["status"] != "CLOSED":
             still_open.append(trade["ticker"])
             continue
@@ -80,13 +100,18 @@ def close_paper_trades(database_path=None, fetch=fetch_daily_bars):
         if result is not None:
             closed.append(result)
 
-    return {"closed": closed, "still_open": still_open, "failures": failures}
+    return {
+        "closed": closed,
+        "halves": halves,
+        "still_open": still_open,
+        "failures": failures,
+    }
 
 
 def main():
     print()
     print("================================")
-    print("PAPER EXITS (STOP / 2R TARGET / 20 DAYS)")
+    print("PAPER EXITS (STOP / HALF 2R + REST 2.5R / 20 DAYS)")
     print("================================")
     try:
         result = close_paper_trades()
@@ -94,6 +119,12 @@ def main():
         print(f"Paper exit check failed: {exc}", file=sys.stderr)
         return 1
 
+    for trade in result["halves"]:
+        print(
+            f"HALF SOLD {trade['ticker']}: {trade['partial_shares']} shares at "
+            f"${trade['partial_exit_price']:.2f} (2R); stop moved to "
+            f"${trade['active_stop_price']:.2f}"
+        )
     for trade in result["closed"]:
         print(
             f"CLOSED {trade['ticker']} ({trade['strategy'] or 'unknown'}): "

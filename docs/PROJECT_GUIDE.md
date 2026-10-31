@@ -78,8 +78,9 @@ Run the stages in sequence. Each stage uses output from the preceding stage:
    `data/qualified_setups_topdown.json`.
 4. `master_selector.py` compares scanner results and writes
    `data/master_candidates.json` and `data/best_current_candidate.json`.
-5. `paper_exits.py` closes open paper trades that hit their stop, 2R target,
-   or 20-day limit, so their slots can be refilled.
+5. `paper_exits.py` sells half of an open paper trade at 2R (the stop of the
+   rest moves to the entry price) and closes trades that hit their stop, the
+   2.5R target or the 20-day limit, so their slots can be refilled.
 6. `scanner_pullback.py` finds S&P 500 leaders (top 20% by 6-month return,
    in an uptrend) that fell more than 5% this week and writes
    `data/pullback_setups.json`.
@@ -144,8 +145,10 @@ used, and TradingView alerts are ignored while it is on.
    Trade slots panel.
 5. The 8:30 AM scan sends orders once the market is open. Buy buttons only
    work while the market is open (9:30 AM - 4:00 PM New York).
-6. Each buy has a real stop-loss and 2R target at Alpaca. Fills and exits
-   appear in the journal after the next scan or dashboard refresh.
+6. Each filled buy gets a real stop-loss at Alpaca and two targets: half the
+   shares sell at 2R, the rest at 2.5R. After the half sells, the stop of
+   the rest moves to the entry price. Fills and exits appear in the journal
+   after the next scan or dashboard refresh.
 
 The same keys also turn on the bad-news check.
 
@@ -172,8 +175,9 @@ below apply when auto trading is off.
    A confirmed BUY is recorded as
    a paper position in `data/paper_trades.sqlite3`; a TradingView SELL closes
    it and saves realized P&L. No live order is placed. This journal uses the
-   alert price. Each daily scan closes open paper trades that hit their
-   stop, 2R target, or 20-day limit (`paper_exits.py`); this is a
+   alert price. Each daily scan sells half at 2R and closes open paper
+   trades that hit their stop, the 2.5R target, or the 20-day limit
+   (`paper_exits.py`); this is a
    once-a-day paper check, not a broker stop order.
 6. To receive daily email alerts, set `SMTP_HOST`, `SMTP_PORT`,
    `SMTP_USERNAME`, `SMTP_PASSWORD`, and `TRADINGBOT_ALERT_EMAIL` in `.env`.

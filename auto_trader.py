@@ -27,6 +27,17 @@ def print_sync(result):
             f"FILLED {trade['ticker']} ({trade['strategy']}, {trade['entry_source']}): "
             f"{trade['shares']} @ ${trade['entry_price']:.2f}, "
             f"stop ${trade['stop_price']:.2f}, target ${trade['target_price']:.2f}"
+            + (
+                f" (half), ${trade['target2_price']:.2f} (rest)"
+                if trade.get("target2_price") is not None
+                else ""
+            )
+        )
+    for trade in result.get("halves", []):
+        print(
+            f"HALF SOLD {trade['ticker']}: {trade['partial_shares']} @ "
+            f"${trade['partial_exit_price']:.2f} (2R); stop of the rest moves "
+            f"to ${trade['entry_price']:.2f}"
         )
     for trade in result["closed"]:
         print(
@@ -78,7 +89,8 @@ def main(argv=None):
         print(
             f"ORDER SENT {order['ticker']} ({order['strategy']}): "
             f"{order['shares']} shares ~${order['price']:.2f}, "
-            f"stop ${order['stop']}, target ${order['target']}"
+            f"stop ${order['stop']}, targets ${order['target']} (half) / "
+            f"${order['target2']} (rest)"
         )
 
     if placed:

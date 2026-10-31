@@ -7,10 +7,13 @@ compared on forward data:
   RULE_2R_20D    sell all at 2R, or at the close after 20 days
   HALF_2R_TRAIL  sell half at 2R, move the stop to breakeven, trail
                  the rest 3 ATR below the highest close
+  HALF_2R_THEN_2_5R  sell half at 2R, move the stop to breakeven, sell
+                 the rest at 2.5R, or at the close after 20 days (the
+                 bot's exit since 2026-10-31; paper_exits.py uses it)
 
 Nothing here places or changes orders; it only records what each rule
 would have done. Results come from the backtest
-backtests/backtest_trend_exits.py (2026-10-27).
+backtests/backtest_trend_exits.py (2026-10-27, 10 years 2026-10-31).
 
 Replay details:
   - Risk per share is the recorded entry minus the recorded stop.
@@ -18,6 +21,8 @@ Replay details:
     the day is unknown); its close still moves the trailing stop.
   - When a bar touches both the stop and a target, the stop is
     assumed to fill first. No slippage is applied.
+  - The half at 2R is sold before the rest's target is checked, so a
+    bar through both sells half at 2R and the rest at the target.
 """
 
 import sqlite3
@@ -35,6 +40,7 @@ NEW_YORK = ZoneInfo("America/New_York")
 RULES = {
     "RULE_2R_20D": {"target_r": 2.0, "max_hold_days": 20},
     "HALF_2R_TRAIL": {"partial_r": 2.0, "trail_atr": 3.0},
+    "HALF_2R_THEN_2_5R": {"partial_r": 2.0, "target_r": 2.5, "max_hold_days": 20},
 }
 
 # Enough history before entry for a settled 14-day ATR.
@@ -92,6 +98,7 @@ def simulate(rule, entry_date, entry_price, stop_price, shares, bars):
     shares_open = shares
     realized = 0.0
     partial_price = None
+    partial_date = None
     last_close = entry_price
     last_bar_date = None
 
@@ -104,6 +111,8 @@ def simulate(rule, entry_date, entry_price, stop_price, shares, bars):
             "status": status,
             "stop_price": stop,
             "partial_price": partial_price,
+            "partial_date": partial_date,
+            "partial_shares": shares - shares_open,
             "exit_date": exit_date,
             "exit_price": exit_price,
             "exit_reason": reason,
@@ -116,11 +125,12 @@ def simulate(rule, entry_date, entry_price, stop_price, shares, bars):
         return "TRAIL_STOP" if stop > stop_price else "STOP"
 
     def take_partial(price):
-        nonlocal shares_open, realized, partial_price, stop
+        nonlocal shares_open, realized, partial_price, partial_date, stop
         sold = shares // 2
         shares_open -= sold
         realized += sold * price
         partial_price = price
+        partial_date = day
         stop = max(stop, entry_price)
 
     held = bars[bars.index.date >= entry_date]
@@ -135,17 +145,17 @@ def simulate(rule, entry_date, entry_price, stop_price, shares, bars):
         if hold_days > 1:
             if open_ <= stop:
                 return result("CLOSED", day, open_, f"GAP_{stop_reason()}")
-            if target and open_ >= target:
-                return result("CLOSED", day, open_, "GAP_TARGET")
             if partial_level and partial_price is None and open_ >= partial_level:
                 take_partial(open_)
+            if target and open_ >= target:
+                return result("CLOSED", day, open_, "GAP_TARGET")
 
             if low <= stop:
                 return result("CLOSED", day, stop, stop_reason())
-            if target and high >= target:
-                return result("CLOSED", day, target, "TARGET")
             if partial_level and partial_price is None and high >= partial_level:
                 take_partial(partial_level)
+            if target and high >= target:
+                return result("CLOSED", day, target, "TARGET")
 
         last_close = close
         max_hold = settings.get("max_hold_days")

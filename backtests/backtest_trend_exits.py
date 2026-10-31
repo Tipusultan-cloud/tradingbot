@@ -20,6 +20,12 @@ import pandas as pd
 #                        trail the rest by 3 ATR
 #   2R_HOLD_ABOVE_EMA20  2R target; after 20 days stay in while
 #                        the close is above EMA20, up to 60 days
+#   HALF_2R_THEN_2.5R    sell half at 2R, stop to breakeven, the
+#                        rest at 2.5R or after 20 days (the bot's
+#                        exit since 2026-10-31)
+#
+# A bar through both the half's 2R level and the target sells the
+# half at 2R first, then the rest at the target.
 #
 # Every variant keeps the 1.5 ATR starting stop and 1% risk.
 # Stops only move up, after the close, so they apply from the
@@ -94,6 +100,12 @@ EXIT_RULES = [
         target_r=hv.REWARD_RISK_RATIO,
         max_hold_days=hv.MAX_HOLD_DAYS,
         extended_hold_days=60,
+    ),
+    ExitRule(
+        "HALF_2R_THEN_2.5R",
+        partial_r=hv.REWARD_RISK_RATIO,
+        target_r=2.5,
+        max_hold_days=hv.MAX_HOLD_DAYS,
     ),
 ]
 
@@ -176,14 +188,15 @@ def run_with_exit(rule, candidate_df, calendar, stock_dfs):
                     close_trade(
                         date_value, open_price * (1 - slip), f"GAP_{stop_reason()}"
                     )
-                elif position["target"] and open_price >= position["target"]:
-                    close_trade(date_value, open_price * (1 - slip), "GAP_TARGET")
-                elif (
-                    position["partial_level"]
-                    and position["partial_price"] is None
-                    and open_price >= position["partial_level"]
-                ):
-                    take_partial(open_price * (1 - slip))
+                else:
+                    if (
+                        position["partial_level"]
+                        and position["partial_price"] is None
+                        and open_price >= position["partial_level"]
+                    ):
+                        take_partial(open_price * (1 - slip))
+                    if position["target"] and open_price >= position["target"]:
+                        close_trade(date_value, open_price * (1 - slip), "GAP_TARGET")
 
         # 2. Enter the pending signal at today's open.
         if pending is not None and position is None:
@@ -246,10 +259,6 @@ def run_with_exit(rule, candidate_df, calendar, stock_dfs):
                     close_trade(
                         date_value, position["stop"] * (1 - slip), stop_reason()
                     )
-                elif position["target"] and high >= position["target"]:
-                    close_trade(
-                        date_value, position["target"] * (1 - slip), "TARGET"
-                    )
                 else:
                     if (
                         position["partial_level"]
@@ -258,7 +267,11 @@ def run_with_exit(rule, candidate_df, calendar, stock_dfs):
                     ):
                         take_partial(position["partial_level"] * (1 - slip))
 
-                    if rule.max_hold_days and hold_days >= rule.max_hold_days:
+                    if position["target"] and high >= position["target"]:
+                        close_trade(
+                            date_value, position["target"] * (1 - slip), "TARGET"
+                        )
+                    elif rule.max_hold_days and hold_days >= rule.max_hold_days:
                         hold_on = (
                             rule.extended_hold_days
                             and hold_days < rule.extended_hold_days

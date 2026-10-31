@@ -121,7 +121,9 @@ recorded as **paper trades** (no real money, no broker orders).
 - **How:** Confirmed BUY → open position; SELL → close it and store realized
   P&L. Blocks a second open trade in the same ticker and duplicate signals.
   Since 2026-10-28 the daily scan closes paper trades at stop, 2R target or
-  20 days (`paper_exits.py`). No broker orders.
+  20 days (`paper_exits.py`); since 2026-10-31 it sells half at 2R (stop of
+  the rest moves to entry) and the rest at 2.5R. Alpaca paper trades use
+  real orders for the same rule (`trade_manager.py`).
 
 ### 2.9 Automation and scripts — `scripts/`, `.bat` files
 - **What:** One-click start, scheduled daily scan, backups, optional email.
@@ -213,6 +215,10 @@ time. The exact final one-trade-per-week strategy has **not** been backtested.
 - [ ] Monitoring and logging for a cloud deployment.
 - [x] Leader-pullback entry + 2 trade slots, paper only (2026-10-28).
 - [x] Automatic paper exits at stop / 2R / 20 days (2026-10-28).
+- [x] Exit changed to half at 2R + rest at 2.5R (2026-10-31).
+- [ ] Backtest the half 2R + 2.5R exit on Bot 2 and with 2 slots.
+- [ ] Watch the first live Alpaca paper trade with the new exit: both OCO
+      orders appear, and the stop moves to entry after the half fills.
 - [ ] After 2-3 months of paper trades, compare `A_PLUS` vs `PULLBACK`
       results in the journal against the backtest.
 - [ ] Real-money automation — only after enough forward paper-trading evidence.
@@ -220,6 +226,52 @@ time. The exact final one-trade-per-week strategy has **not** been backtested.
 ---
 
 ## 5. Activity Log (newest first)
+
+### 2026-10-31 — New exit: half at 2R, the rest at 2.5R
+
+**What:** New trades sell half the shares at 2R; the stop of the rest then
+moves up to the entry price, and the rest sell at 2.5R (or at the stop, or
+after 20 sessions). Applies to Alpaca paper trades, journal-only paper
+trades (`paper_exits.py`) and the backtest. MPC and FTNT (opened 2026-10-30)
+keep their single 2R bracket.
+
+**Why:** 10-year backtests (2016-10 to 2026-10, A+ strategy, one trade at a
+time) of the exits: trailing 3 ATR +84-96%, half 2R + trail +59-69%,
+**half 2R + rest 2.5R +54.3%**, 2.5R +60%, current 2R +49.7%, 3R only +37%
+(fails within 20 days; +56% with 30 days), 4R +31%. The user picked half at
+2R / rest at 2.5R with the stop moved to entry. Gain vs 2R: first 5 years
++25.5% vs +22.1%, last 5 years +19.9% vs +19.7%, same drawdown (6.3% vs
+6.4%) — small, not proven. Not yet tested on Bot 2 or with 2 slots.
+
+**How:**
+- `trade_manager.py`: a buy is now a plain market order (Alpaca rejects a
+  second bracket buy of a stock while the first one's sell legs are open).
+  When it fills, two OCO sells (limit + stop, GTC) are placed: half at 2R,
+  the rest at 2.5R. Order ids are saved one by one, so a failed placement is
+  retried on the next sync without doubling. When the half fills, the
+  rest's stop leg is replaced with the entry price. If both stop out, the
+  exit price is the average of the two fills. 20-day and Sell-button exits
+  cancel both OCOs. Old bracket trades (no `target2_price`) use the old code.
+- `paper_journal.py`: new columns `target2_price`, `active_stop_price`,
+  `partial_shares`, `partial_exit_price`, `partial_exit_time`,
+  `half_order_id`, `rest_order_id` (and `target2_price` on `broker_orders`),
+  added automatically to existing journals. Realized P&L counts both parts;
+  exits after the half get a `PARTIAL+` prefix. Open risk uses the moved
+  stop and the remaining shares.
+- `shadow_exits.py`: new rule `HALF_2R_THEN_2_5R` (also used by
+  `paper_exits.py`); a bar through both levels now sells the half at 2R
+  before the rest's target (same fix in `backtest_trend_exits.py`, which
+  gets the new rule too; no existing rule had both, so their results are
+  unchanged).
+- Dashboard: open positions show remaining shares, the current stop and
+  both targets; exit labels like "Half at 2R, rest at 2.5R"; the exit
+  comparison panel shows the new rule. `.env.example`:
+  `SECOND_REWARD_RISK_RATIO=2.5`.
+- Limits: until the next sync after a fill the position has no stop at
+  Alpaca (seconds after an auto-buy, up to a minute after a dashboard Buy);
+  the stop moves to entry on the next sync after the half fills. The Alpaca
+  OCO and stop-change calls are tested only against a fake Alpaca client.
+  224 tests pass.
 
 ### 2026-10-30 — Sell button for open trades
 

@@ -662,7 +662,9 @@ def mark_bot_list(rows, prices):
 def mark_open_trades(trades, prices):
     """Add live price and unrealized P/L to open trades; return the total.
 
-    The total is None when no open trade has a live price.
+    After the half was sold at 2R, the P/L is that sale plus the remaining
+    shares at the live price. The total is None when no open trade has a
+    live price.
     """
     total = None
     for trade in trades:
@@ -674,7 +676,11 @@ def mark_open_trades(trades, prices):
         shares = trade.get("shares")
         if price is None or not entry or not shares:
             continue
-        pnl = round((price - entry) * shares, 2)
+        sold = trade.get("partial_shares") or 0
+        pnl = (price - entry) * (shares - sold)
+        if sold:
+            pnl += (trade["partial_exit_price"] - entry) * sold
+        pnl = round(pnl, 2)
         trade["unrealized_pnl"] = pnl
         trade["unrealized_pct"] = round((price / entry - 1) * 100, 2)
         total = round((total or 0) + pnl, 2)

@@ -1,17 +1,28 @@
 """Open and track Alpaca paper trades for the trade slots.
 
-open_trade() sends a bracket order: a market buy plus a stop-loss at
-price - 1.5 ATR and a take-profit at 2R, both held at Alpaca until one
-fills (good till canceled). Shares risk 1% of PAPER_ACCOUNT_BALANCE.
+open_trade() sends a market buy. Shares risk 1% of PAPER_ACCOUNT_BALANCE,
+with a stop at price - 1.5 ATR. Once the buy fills, two OCO sell orders
+(a limit target and a stop, good till canceled) are placed at Alpaca:
+
+  - half the shares: target 2R (REWARD_RISK_RATIO)
+  - the rest: target 2.5R (SECOND_REWARD_RISK_RATIO)
+
+When the 2R half fills, the stop of the rest moves up to the entry price.
 The 2-slot limit counts open trades and orders not yet filled.
 
 sync() brings the journal up to date with Alpaca:
-  - a filled entry order becomes an open journal trade (fill price)
-  - a filled stop or target leg closes the trade (STOP / TARGET)
+  - a filled entry order becomes an open journal trade (fill price) and
+    gets its two exit orders (retried on the next sync if that fails)
+  - a filled 2R half is recorded and the stop of the rest is moved
+  - a filled rest (target or stop) closes the trade (TARGET / STOP, with
+    a PARTIAL+ prefix when the half was sold first)
   - a trade held 20 sessions is sold at market (TIME_EXIT), as in the
     backtests
 
-sell_trade() is the dashboard Sell button: it cancels the stop and target
+Trades opened before 2026-10-31 hold one bracket order (stop + 2R target
+for all shares); they are still tracked through its legs.
+
+sell_trade() is the dashboard Sell button: it cancels the exit orders
 and sells at market (MANUAL_SELL).
 
 The Alpaca client and price lookup are passed in so tests can use fakes.
@@ -30,6 +41,8 @@ from paper_journal import (
     get_pending_broker_orders,
     initialize_journal,
     record_entry,
+    record_partial_exit,
+    update_trade_orders,
 )
 from slot_selector import max_open_trades
 
@@ -37,6 +50,8 @@ MAX_HOLD_SESSIONS = 20
 SOURCE_AUTO = "AUTO"
 SOURCE_MANUAL = "MANUAL"
 CANCELED_STATUSES = {"canceled", "expired", "rejected", "suspended", "stopped"}
+# Order statuses that will not fill any more.
+FINAL_STATUSES = CANCELED_STATUSES | {"filled", "replaced"}
 
 
 class TradeError(Exception):
@@ -61,11 +76,12 @@ def risk_settings():
         "risk_pct": float(os.getenv("RISK_PER_TRADE_PCT", "1")),
         "atr_multiplier": float(os.getenv("ATR_MULTIPLIER", "1.5")),
         "reward_risk": float(os.getenv("REWARD_RISK_RATIO", "2")),
+        "second_reward_risk": float(os.getenv("SECOND_REWARD_RISK_RATIO", "2.5")),
     }
 
 
 def plan_order(price, atr, settings):
-    """Shares, stop and target for a buy at `price`."""
+    """Shares, stop and the two targets for a buy at `price`."""
     if price <= 0 or atr <= 0:
         raise TradeError("Price and ATR must be greater than 0.")
     stop_distance = atr * settings["atr_multiplier"]
@@ -73,13 +89,14 @@ def plan_order(price, atr, settings):
     if stop <= 0:
         raise TradeError("Calculated stop is not above $0.")
     target = round(price + stop_distance * settings["reward_risk"], 2)
+    target2 = round(price + stop_distance * settings["second_reward_risk"], 2)
     shares = min(
         math.floor(settings["account"] * settings["risk_pct"] / 100 / stop_distance),
         math.floor(settings["account"] / price),
     )
     if shares < 1:
         raise TradeError("Position size is below 1 share.")
-    return {"shares": shares, "stop": stop, "target": target}
+    return {"shares": shares, "stop": stop, "target": target, "target2": target2}
 
 
 def busy_tickers(database_path=None):
@@ -97,13 +114,9 @@ def busy_tickers(database_path=None):
 
 
 def open_trade(client, stock, strategy, entry_source, price_lookup, database_path=None):
-    """Send a bracket buy for one stock from a bot list."""
-    from alpaca.trading.enums import OrderClass, OrderSide, TimeInForce
-    from alpaca.trading.requests import (
-        MarketOrderRequest,
-        StopLossRequest,
-        TakeProfitRequest,
-    )
+    """Send a market buy for one stock from a bot list."""
+    from alpaca.trading.enums import OrderSide, TimeInForce
+    from alpaca.trading.requests import MarketOrderRequest
 
     ticker = str(stock["ticker"]).upper()
     if not client.get_clock().is_open:
@@ -124,10 +137,7 @@ def open_trade(client, stock, strategy, entry_source, price_lookup, database_pat
         symbol=ticker,
         qty=plan["shares"],
         side=OrderSide.BUY,
-        time_in_force=TimeInForce.GTC,
-        order_class=OrderClass.BRACKET,
-        take_profit=TakeProfitRequest(limit_price=plan["target"]),
-        stop_loss=StopLossRequest(stop_price=plan["stop"]),
+        time_in_force=TimeInForce.DAY,
         client_order_id=f"tb-{ticker}-{int(time.time())}",
     ))
     add_broker_order(
@@ -137,6 +147,7 @@ def open_trade(client, stock, strategy, entry_source, price_lookup, database_pat
         atr=atr,
         stop_price=plan["stop"],
         target_price=plan["target"],
+        target2_price=plan["target2"],
         strategy=strategy,
         entry_source=entry_source,
         setup_score=stock.get("setup_score"),
@@ -150,6 +161,54 @@ def open_trade(client, stock, strategy, entry_source, price_lookup, database_pat
         "price": price,
         **plan,
     }
+
+
+def _submit_oco(client, ticker, shares, target, stop):
+    """One sell order pair at Alpaca: limit at `target`, stop at `stop`."""
+    from alpaca.trading.enums import OrderClass, OrderSide, TimeInForce
+    from alpaca.trading.requests import (
+        LimitOrderRequest,
+        StopLossRequest,
+        TakeProfitRequest,
+    )
+
+    return client.submit_order(LimitOrderRequest(
+        symbol=ticker,
+        qty=shares,
+        side=OrderSide.SELL,
+        time_in_force=TimeInForce.GTC,
+        order_class=OrderClass.OCO,
+        limit_price=target,
+        take_profit=TakeProfitRequest(limit_price=target),
+        stop_loss=StopLossRequest(stop_price=stop),
+    ))
+
+
+def place_exit_orders(client, trade, database_path=None):
+    """Send the exit orders a filled split-exit trade is still missing.
+
+    Half the shares sell at the 2R target, the rest at target2. A 1-share
+    trade has no half and sells at target2. Each order id is saved as soon
+    as it is sent, so a retry never sends one twice.
+    """
+    half_shares = trade["shares"] // 2
+    if half_shares and not trade["half_order_id"]:
+        order = _submit_oco(
+            client, trade["ticker"], half_shares,
+            trade["target_price"], trade["stop_price"],
+        )
+        trade = update_trade_orders(
+            trade["id"], half_order_id=str(order.id), database_path=database_path
+        )
+    if not trade["rest_order_id"]:
+        order = _submit_oco(
+            client, trade["ticker"], trade["shares"] - half_shares,
+            trade["target2_price"], trade["stop_price"],
+        )
+        trade = update_trade_orders(
+            trade["id"], rest_order_id=str(order.id), database_path=database_path
+        )
+    return trade
 
 
 def sessions_held(client, entry_time, today):
@@ -181,7 +240,7 @@ def sync(client, price_lookup, database_path=None, today=None, delay=1.0):
     from alpaca.trading.requests import GetOrderByIdRequest
 
     today = today or date.today()
-    result = {"filled": [], "canceled": [], "closed": [], "errors": []}
+    result = {"filled": [], "canceled": [], "halves": [], "closed": [], "errors": []}
 
     for pending in get_pending_broker_orders(database_path):
         try:
@@ -204,12 +263,20 @@ def sync(client, price_lookup, database_path=None, today=None, delay=1.0):
                 strategy=pending["strategy"],
                 entry_source=pending["entry_source"],
                 broker_order_id=pending["order_id"],
+                target2_price=pending["target2_price"],
             )
             finish_broker_order(
                 pending["order_id"], "FILLED", trade_id=trade["id"],
                 database_path=database_path,
             )
             result["filled"].append(trade)
+            if trade["target2_price"] is not None:
+                try:
+                    place_exit_orders(client, trade, database_path)
+                except Exception as exc:  # retried by the next sync
+                    result["errors"].append(
+                        f"{trade['ticker']}: exit orders not placed yet: {exc}"
+                    )
         elif status in CANCELED_STATUSES:
             finish_broker_order(
                 pending["order_id"], "CANCELED", detail=status,
@@ -230,7 +297,7 @@ def sync(client, price_lookup, database_path=None, today=None, delay=1.0):
         try:
             closed = _sync_open_trade(
                 client, trade, price_lookup, database_path, today, delay,
-                GetOrderByIdRequest,
+                GetOrderByIdRequest, result["halves"],
             )
         except Exception as exc:  # network and API errors
             result["errors"].append(f"{trade['ticker']}: {exc}")
@@ -240,33 +307,120 @@ def sync(client, price_lookup, database_path=None, today=None, delay=1.0):
     return result
 
 
-def _sync_open_trade(client, trade, price_lookup, database_path, today, delay, nested_request):
-    order = client.get_order_by_id(
-        trade["broker_order_id"], filter=nested_request(nested=True)
-    )
-    legs = order.legs or []
-    for leg in legs:
+def _filled_exit(order):
+    """(price, time, reason) when an OCO pair or bracket leg has filled."""
+    if _value(order.status) == "filled":
+        return float(order.filled_avg_price), _iso(order.filled_at), "TARGET"
+    for leg in order.legs or []:
         if _value(leg.status) == "filled":
             reason = "TARGET" if _value(leg.type) == "limit" else "STOP"
-            return close_trade(
-                trade["id"], float(leg.filled_avg_price), reason,
-                _iso(leg.filled_at), database_path=database_path,
+            return float(leg.filled_avg_price), _iso(leg.filled_at), reason
+    return None
+
+
+def _move_stop(client, order, stop_price):
+    """Move the stop of an OCO pair (its stop leg) to `stop_price`."""
+    from alpaca.trading.requests import ReplaceOrderRequest
+
+    for leg in order.legs or []:
+        if _value(leg.type) == "stop" and _value(leg.status) not in FINAL_STATUSES:
+            client.replace_order_by_id(
+                leg.id, ReplaceOrderRequest(stop_price=stop_price)
             )
+
+
+def _check_split_exits(client, trade, database_path, nested_request, halves=None):
+    """Record what filled for a split-exit trade.
+
+    Returns (closed trade or None, the trade's Alpaca exit orders).
+    """
+    if not trade["rest_order_id"]:
+        trade = place_exit_orders(client, trade, database_path)
+
+    def fetch(order_id):
+        return client.get_order_by_id(order_id, filter=nested_request(nested=True))
+
+    half = fetch(trade["half_order_id"]) if trade["half_order_id"] else None
+    rest = fetch(trade["rest_order_id"])
+    orders = [order for order in (half, rest) if order is not None]
+
+    half_fill = _filled_exit(half) if half is not None else None
+    if (
+        half_fill
+        and half_fill[2] == "TARGET"
+        and trade["partial_exit_price"] is None
+    ):
+        recorded = record_partial_exit(
+            trade["id"], trade["shares"] // 2, half_fill[0], half_fill[1],
+            database_path=database_path,
+        )
+        if recorded is not None:
+            trade = recorded
+            if halves is not None:
+                halves.append(recorded)
+
+    if trade["partial_exit_price"] is not None and trade["active_stop_price"] is None:
+        breakeven = round(trade["entry_price"], 2)
+        _move_stop(client, rest, breakeven)
+        trade = update_trade_orders(
+            trade["id"], active_stop_price=breakeven, database_path=database_path
+        )
+
+    rest_fill = _filled_exit(rest)
+    if rest_fill is None:
+        return None, orders
+    price, filled_at, reason = rest_fill
+    if trade["partial_exit_price"] is None and half is not None:
+        # Both parts share the first stop; wait until the half's stop fills too.
+        if half_fill is None:
+            return None, orders
+        half_shares = trade["shares"] // 2
+        price = (
+            half_fill[0] * half_shares + price * (trade["shares"] - half_shares)
+        ) / trade["shares"]
+    closed = close_trade(
+        trade["id"], price, reason, filled_at, database_path=database_path
+    )
+    return closed, orders
+
+
+def _sync_open_trade(
+    client, trade, price_lookup, database_path, today, delay, nested_request,
+    halves=None,
+):
+    if trade["target2_price"] is not None:
+        closed, orders = _check_split_exits(
+            client, trade, database_path, nested_request, halves
+        )
+        if closed is not None:
+            return closed
+    else:
+        order = client.get_order_by_id(
+            trade["broker_order_id"], filter=nested_request(nested=True)
+        )
+        orders = order.legs or []
+        for leg in orders:
+            if _value(leg.status) == "filled":
+                reason = "TARGET" if _value(leg.type) == "limit" else "STOP"
+                return close_trade(
+                    trade["id"], float(leg.filled_avg_price), reason,
+                    _iso(leg.filled_at), database_path=database_path,
+                )
 
     if sessions_held(client, trade["entry_time"], today) < MAX_HOLD_SESSIONS:
         return None
     if not client.get_clock().is_open:
         return None
     return _sell_at_market(
-        client, trade, legs, "TIME_EXIT", price_lookup, database_path, delay
+        client, trade, orders, "TIME_EXIT", price_lookup, database_path, delay
     )
 
 
-def _sell_at_market(client, trade, legs, reason, price_lookup, database_path, delay):
-    """Cancel the stop and target, sell the position, close the trade."""
-    for leg in legs:
-        if _value(leg.status) not in CANCELED_STATUSES | {"filled"}:
-            client.cancel_order_by_id(leg.id)
+def _sell_at_market(client, trade, orders, reason, price_lookup, database_path, delay):
+    """Cancel the exit orders, sell the position, close the trade."""
+    for order in orders:
+        if _value(order.status) not in FINAL_STATUSES:
+            client.cancel_order_by_id(order.id)
     exit_order = client.close_position(trade["ticker"])
     filled = wait_for_fill(client, exit_order.id, delay=delay)
     price = (
@@ -300,19 +454,27 @@ def sell_trade(client, ticker, price_lookup, database_path=None, delay=1.0):
     if not client.get_clock().is_open:
         raise TradeError("The market is closed; sell when it opens")
 
-    order = client.get_order_by_id(
-        trade["broker_order_id"], filter=GetOrderByIdRequest(nested=True)
-    )
-    legs = order.legs or []
-    # The stop or target may have filled since the last sync.
-    for leg in legs:
-        if _value(leg.status) == "filled":
-            reason = "TARGET" if _value(leg.type) == "limit" else "STOP"
-            close_trade(
-                trade["id"], float(leg.filled_avg_price), reason,
-                _iso(leg.filled_at), database_path=database_path,
-            )
+    # A stop or target may have filled since the last sync.
+    if trade["target2_price"] is not None:
+        closed, orders = _check_split_exits(
+            client, trade, database_path, GetOrderByIdRequest
+        )
+        if closed is not None:
+            reason = closed["exit_reason"].removeprefix("PARTIAL+")
             raise TradeError(f"{ticker} already closed at its {reason.lower()}")
+    else:
+        order = client.get_order_by_id(
+            trade["broker_order_id"], filter=GetOrderByIdRequest(nested=True)
+        )
+        orders = order.legs or []
+        for leg in orders:
+            if _value(leg.status) == "filled":
+                reason = "TARGET" if _value(leg.type) == "limit" else "STOP"
+                close_trade(
+                    trade["id"], float(leg.filled_avg_price), reason,
+                    _iso(leg.filled_at), database_path=database_path,
+                )
+                raise TradeError(f"{ticker} already closed at its {reason.lower()}")
     return _sell_at_market(
-        client, trade, legs, "MANUAL_SELL", price_lookup, database_path, delay
+        client, trade, orders, "MANUAL_SELL", price_lookup, database_path, delay
     )

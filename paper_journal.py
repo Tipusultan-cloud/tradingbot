@@ -31,10 +31,33 @@ TRADE_CSV_FIELDS = (
     "strategy",
     "entry_source",
     "broker_order_id",
+    "target2_price",
+    "active_stop_price",
+    "partial_shares",
+    "partial_exit_price",
+    "partial_exit_time",
+    "half_order_id",
+    "rest_order_id",
 )
 
 # Columns added after the first journals were created.
-ADDED_COLUMNS = ("strategy", "entry_source", "broker_order_id")
+ADDED_COLUMNS = {
+    "strategy": "TEXT",
+    "entry_source": "TEXT",
+    "broker_order_id": "TEXT",
+    # Split exit: half at the 2R target, the rest at target2_price (2.5R).
+    # NULL target2_price = an older trade with a single 2R target.
+    "target2_price": "REAL",
+    # Stop after the half is sold (entry price); NULL = stop_price.
+    "active_stop_price": "REAL",
+    "partial_shares": "INTEGER",
+    "partial_exit_price": "REAL",
+    "partial_exit_time": "TEXT",
+    # Alpaca OCO sell orders (limit target + stop) for each part.
+    "half_order_id": "TEXT",
+    "rest_order_id": "TEXT",
+}
+BROKER_ORDER_ADDED_COLUMNS = {"target2_price": "REAL"}
 
 
 class DuplicateSignalError(Exception):
@@ -97,19 +120,18 @@ def initialize_journal(database_path=None):
                 exit_reason TEXT,
                 strategy TEXT,
                 entry_source TEXT,
-                broker_order_id TEXT
+                broker_order_id TEXT,
+                target2_price REAL,
+                active_stop_price REAL,
+                partial_shares INTEGER,
+                partial_exit_price REAL,
+                partial_exit_time TEXT,
+                half_order_id TEXT,
+                rest_order_id TEXT
             )
             """
         )
-        columns = {
-            row["name"]
-            for row in connection.execute("PRAGMA table_info(paper_trades)")
-        }
-        for column in ADDED_COLUMNS:
-            if column not in columns:
-                connection.execute(
-                    f"ALTER TABLE paper_trades ADD COLUMN {column} TEXT"
-                )
+        _add_missing_columns(connection, "paper_trades", ADDED_COLUMNS)
         # Broker orders sent but not yet filled; a fill becomes a trade.
         connection.execute(
             """
@@ -127,10 +149,12 @@ def initialize_journal(database_path=None):
                     CHECK (status IN ('PENDING', 'FILLED', 'CANCELED')),
                 detail TEXT,
                 trade_id INTEGER REFERENCES paper_trades(id),
-                submitted_at TEXT NOT NULL
+                submitted_at TEXT NOT NULL,
+                target2_price REAL
             )
             """
         )
+        _add_missing_columns(connection, "broker_orders", BROKER_ORDER_ADDED_COLUMNS)
         connection.execute(
             """
             CREATE UNIQUE INDEX IF NOT EXISTS one_open_paper_trade_per_ticker
@@ -147,6 +171,15 @@ def initialize_journal(database_path=None):
             )
             """
         )
+
+
+def _add_missing_columns(connection, table, wanted):
+    columns = {
+        row["name"] for row in connection.execute(f"PRAGMA table_info({table})")
+    }
+    for column, kind in wanted.items():
+        if column not in columns:
+            connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
 
 
 def _validate_positive(name, value):
@@ -200,7 +233,10 @@ def export_paper_trades_csv(database_path=None, export_path=None):
                 SELECT id, ticker, entry_time, entry_price, atr, shares,
                        stop_price, target_price, setup_score, status,
                        exit_time, exit_price, realized_pnl, exit_reason,
-                       strategy, entry_source, broker_order_id
+                       strategy, entry_source, broker_order_id,
+                       target2_price, active_stop_price, partial_shares,
+                       partial_exit_price, partial_exit_time,
+                       half_order_id, rest_order_id
                 FROM paper_trades
                 ORDER BY id
                 """
@@ -248,6 +284,7 @@ def record_entry(
     strategy=None,
     entry_source=None,
     broker_order_id=None,
+    target2_price=None,
 ):
     ticker = str(ticker).strip().upper()
     if not ticker:
@@ -261,6 +298,10 @@ def record_entry(
         raise ValueError("Stop price must be below entry price")
     if target_price <= entry_price:
         raise ValueError("Target price must be above entry price")
+    if target2_price is not None:
+        target2_price = _validate_positive("Second target price", target2_price)
+        if target2_price <= entry_price:
+            raise ValueError("Second target price must be above entry price")
 
     try:
         shares = int(shares)
@@ -291,8 +332,8 @@ def record_entry(
             INSERT INTO paper_trades (
                 ticker, entry_time, entry_price, atr, shares, stop_price,
                 target_price, setup_score, status, strategy,
-                entry_source, broker_order_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?)
+                entry_source, broker_order_id, target2_price
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?)
             """,
             (
                 ticker,
@@ -309,6 +350,7 @@ def record_entry(
                 strategy,
                 entry_source,
                 broker_order_id,
+                target2_price,
             ),
         )
         trade = dict(connection.execute(
@@ -344,7 +386,7 @@ def record_exit(ticker, exit_price, exit_time=None, database_path=None):
             return None
 
         _claim_signal(connection, ticker, "SELL", received_at)
-        realized_pnl = (exit_price - trade["entry_price"]) * trade["shares"]
+        realized_pnl = _realized_pnl(trade, exit_price)
         closed_at = exit_time or time.strftime(
             "%Y-%m-%dT%H:%M:%SZ",
             time.gmtime(received_at),
@@ -369,8 +411,71 @@ def record_exit(ticker, exit_price, exit_time=None, database_path=None):
     return closed_trade
 
 
+def _realized_pnl(trade, exit_price):
+    """P&L of the whole trade: the half sold at 2R plus the rest at exit_price."""
+    sold = trade["partial_shares"] or 0
+    pnl = (exit_price - trade["entry_price"]) * (trade["shares"] - sold)
+    if sold:
+        pnl += (trade["partial_exit_price"] - trade["entry_price"]) * sold
+    return pnl
+
+
+def record_partial_exit(
+    trade_id, shares, exit_price, exit_time, active_stop_price=None, database_path=None
+):
+    """Record the half sold at the first target; None if not open or already done."""
+    exit_price = _validate_positive("Partial exit price", exit_price)
+    shares = int(shares)
+    initialize_journal(database_path)
+    with _connection(database_path) as connection:
+        cursor = connection.execute(
+            """
+            UPDATE paper_trades
+            SET partial_shares = ?, partial_exit_price = ?, partial_exit_time = ?,
+                active_stop_price = ?
+            WHERE id = ? AND status = 'OPEN' AND partial_exit_price IS NULL
+                AND ? BETWEEN 1 AND shares - 1
+            """,
+            (shares, exit_price, exit_time, active_stop_price, trade_id, shares),
+        )
+        if cursor.rowcount == 0:
+            return None
+        trade = dict(connection.execute(
+            "SELECT * FROM paper_trades WHERE id = ?", (trade_id,)
+        ).fetchone())
+    export_paper_trades_csv(database_path)
+    return trade
+
+
+def update_trade_orders(
+    trade_id, half_order_id=None, rest_order_id=None, active_stop_price=None,
+    database_path=None,
+):
+    """Store an open trade's Alpaca exit order ids or its moved stop."""
+    initialize_journal(database_path)
+    with _connection(database_path) as connection:
+        connection.execute(
+            """
+            UPDATE paper_trades
+            SET half_order_id = COALESCE(?, half_order_id),
+                rest_order_id = COALESCE(?, rest_order_id),
+                active_stop_price = COALESCE(?, active_stop_price)
+            WHERE id = ?
+            """,
+            (half_order_id, rest_order_id, active_stop_price, trade_id),
+        )
+        trade = dict(connection.execute(
+            "SELECT * FROM paper_trades WHERE id = ?", (trade_id,)
+        ).fetchone())
+    return trade
+
+
 def close_trade(trade_id, exit_price, exit_reason, exit_time, database_path=None):
-    """Close one open trade by id; None if it is no longer open."""
+    """Close one open trade by id; None if it is no longer open.
+
+    After a half was sold at the first target, exit_price is the price of
+    the remaining shares and the reason gets a PARTIAL+ prefix.
+    """
     exit_price = _validate_positive("Exit price", exit_price)
     initialize_journal(database_path)
     with _connection(database_path) as connection:
@@ -382,7 +487,9 @@ def close_trade(trade_id, exit_price, exit_reason, exit_time, database_path=None
         if trade is None:
             return None
 
-        realized_pnl = (exit_price - trade["entry_price"]) * trade["shares"]
+        realized_pnl = _realized_pnl(trade, exit_price)
+        if trade["partial_shares"] and not exit_reason.startswith("PARTIAL+"):
+            exit_reason = f"PARTIAL+{exit_reason}"
         connection.execute(
             """
             UPDATE paper_trades
@@ -411,6 +518,7 @@ def add_broker_order(
     entry_source=None,
     setup_score=None,
     database_path=None,
+    target2_price=None,
 ):
     """Remember a sent entry order until it fills or is canceled."""
     initialize_journal(database_path)
@@ -419,8 +527,9 @@ def add_broker_order(
             """
             INSERT INTO broker_orders (
                 order_id, ticker, strategy, entry_source, shares, atr,
-                stop_price, target_price, setup_score, status, submitted_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?)
+                stop_price, target_price, setup_score, status, submitted_at,
+                target2_price
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?)
             """,
             (
                 str(order_id),
@@ -433,6 +542,7 @@ def add_broker_order(
                 float(target_price),
                 setup_score,
                 time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                float(target2_price) if target2_price is not None else None,
             ),
         )
 
@@ -501,7 +611,10 @@ def get_paper_trades(limit=25, database_path=None):
                 SUM(CASE WHEN status = 'CLOSED' THEN realized_pnl ELSE 0 END) AS realized_pnl,
                 SUM(CASE WHEN status = 'CLOSED' AND realized_pnl > 0 THEN 1 ELSE 0 END) AS wins,
                 SUM(CASE WHEN status = 'CLOSED' AND realized_pnl < 0 THEN 1 ELSE 0 END) AS losses,
-                SUM(CASE WHEN status = 'OPEN' THEN (entry_price - stop_price) * shares ELSE 0 END) AS open_risk_at_stop
+                SUM(CASE WHEN status = 'OPEN' THEN
+                    (entry_price - COALESCE(active_stop_price, stop_price))
+                    * (shares - COALESCE(partial_shares, 0))
+                    ELSE 0 END) AS open_risk_at_stop
             FROM paper_trades
             """
         ).fetchone()
@@ -539,9 +652,11 @@ def get_paper_trades(limit=25, database_path=None):
     )
     open_trades = [dict(trade) for trade in open_trades]
     for trade in open_trades:
+        trade["shares_open"] = trade["shares"] - (trade["partial_shares"] or 0)
         trade["risk_at_stop"] = (
-            trade["entry_price"] - trade["stop_price"]
-        ) * trade["shares"]
+            trade["entry_price"]
+            - (trade["active_stop_price"] or trade["stop_price"])
+        ) * trade["shares_open"]
     return {
         "open": open_trades,
         "recent": [dict(trade) for trade in recent_trades],

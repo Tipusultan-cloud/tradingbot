@@ -206,8 +206,8 @@ Above its 200-day average, with EMA20 > EMA50
 Down more than 5% over the last 5 sessions
 ```
 
-Stop, target and position size are the same as for A+ trades (1.5 × ATR,
-2R, 1% risk). Pullbacks use no market filter. Earnings and news are shown as
+Stop, targets and position size are the same as for A+ trades (1.5 × ATR,
+half at 2R and the rest at 2.5R, 1% risk). Pullbacks use no market filter. Earnings and news are shown as
 warnings, not blocks, because neither was in the pullback backtest. The
 pullback ranking always uses the S&P 500, whatever `UNIVERSE_SOURCE` is.
 
@@ -246,12 +246,21 @@ Current risk model:
 Account reference: $10,000
 Maximum risk per trade: 1%
 Stop: 1.5 × ATR
-Target: 2R
+Exit: half the shares at 2R, then the stop moves to the entry price
+      and the rest sell at 2.5R
 Maximum holding period: 20 trading days
 Typical historical holding period: about 5-15 trading days
 ```
 
 Position sizing is calculated from the stop distance and maximum account risk.
+
+**Why half at 2R, the rest at 2.5R:** in a 10-year backtest of the A+
+strategy (2016-2026, `backtests/backtest_trend_exits.py` with 10 years) it
+returned +54.3% against +49.7% for selling everything at 2R, with the same
+worst drawdown (6.3% against 6.4%). It was better in the first 5 years
+(+25.5% vs +22.1%) and about equal in the last 5 (+19.9% vs +19.7%), so the
+gain is small. Selling everything at 3R was worse (+37%). Trades opened before
+2026-10-31 keep their single 2R target.
 
 **Automatic trading on Alpaca paper (optional):** with `AUTO_TRADING=true`,
 `ALPACA_PAPER=true` and free Alpaca paper API keys in `.env`:
@@ -260,35 +269,47 @@ Position sizing is calculated from the stop distance and maximum account risk.
   market is open.
 - Each **Buy** button in the dashboard's Bot 1 / Bot 2 lists buys that stock
   (cherry-picking), as long as a slot is free.
-- Every buy is an Alpaca **bracket order**: a market buy plus a real
-  stop-loss (1.5 × ATR below the price when sent) and a 2R take-profit, both
-  kept at Alpaca until one fills. Shares risk 1% of `PAPER_ACCOUNT_BALANCE`.
+- Every buy is a market buy. Once it fills, two Alpaca **OCO** sell orders
+  (a limit target plus a real stop-loss 1.5 × ATR below the price when
+  sent, kept until one fills) are placed: half the shares at the 2R target,
+  the rest at 2.5R (`SECOND_REWARD_RISK_RATIO`). Shares risk 1% of
+  `PAPER_ACCOUNT_BALANCE`. A 1-share trade sells at 2.5R.
+- When the 2R half fills, the stop of the rest is moved up to the entry
+  price, so the rest cannot turn into a loss. This happens on the next sync
+  (scan or dashboard refresh), not instantly.
 - Fills and stop/target exits are copied into the journal (`entry_source`
   `AUTO` or `MANUAL`) by `auto_trader.py --sync` and by dashboard refreshes
-  (at most once a minute). A trade held 20 sessions is sold at market.
+  (at most once a minute). A trade held 20 sessions is sold at market. Exits
+  after the half was sold are saved as `PARTIAL+TARGET`, `PARTIAL+STOP`, etc.
+- Between the buy filling and the next sync (seconds after an auto-buy, up
+  to a minute after a dashboard Buy) the position has no stop at Alpaca yet.
 - Each open trade has a **Sell** button on the dashboard: it cancels the
-  stop and target and sells the whole position at market (`MANUAL_SELL`),
-  only while the market is open.
+  exit orders and sells the whole remaining position at market
+  (`MANUAL_SELL`), only while the market is open.
 - Orders waiting to fill hold a slot. TradingView alerts are ignored while
   auto trading is on, so the journal always matches the Alpaca account.
 - A live (real-money) Alpaca account is refused; there is no setting for it.
 
 **Automatic paper exits:** each daily scan runs `paper_exits.py` before the
 slot selector. It replays every open journal-only paper trade (Alpaca trades
-use their real stop and target orders instead) on completed daily bars and
-closes it at the recorded stop, at 2R, or at the close of the 20th session,
-the same rule as the backtests. The stop is checked before the target; a gap
-through either fills at the open; the entry day's high and low are skipped.
-The exit reason (`STOP`, `GAP_STOP`, `TARGET`, `GAP_TARGET`, `TIME_EXIT`) is
-saved in the journal, and the freed slot can be refilled the same morning.
+use their real stop and target orders instead) on completed daily bars with
+the same rule: half at 2R (the stop of the rest then moves to the entry
+price), the rest at 2.5R, the recorded stop, or the close of the 20th
+session. The stop is checked before the targets; a gap through a level fills
+at the open; the entry day's high and low are skipped. The half sale and the
+exit reason (`STOP`, `GAP_STOP`, `TARGET`, `GAP_TARGET`, `TIME_EXIT`, with a
+`PARTIAL+` prefix after the half was sold; a stop at entry is
+`PARTIAL+TRAIL_STOP`) are saved in the journal, and the freed slot can be
+refilled the same morning.
 This is a once-a-day check of paper trades, not real-time protection: with
 real money, place stop orders at the broker. A TradingView SELL that arrives
 first still closes the trade (`TRADINGVIEW_SELL`).
 
 **Shadow exits:** after each daily scan, `shadow_exits.py` replays every
-paper trade on daily prices with two exit rules: *2R or 20 days* and *half
-at 2R, trail the rest 3 ATR below the highest close*. The dashboard's **Exit
-comparison** panel shows both next to the TradingView exit actually taken.
+paper trade on daily prices with three exit rules: *2R or 20 days* (the old
+exit), *half at 2R, rest at 2.5R* (the current exit) and *half at 2R, trail
+the rest 3 ATR below the highest close*. The dashboard's **Exit
+comparison** panel shows them next to the exit actually taken.
 Nothing is sold automatically; this collects forward evidence before any
 exit rule is changed (backtest: `backtests/backtest_trend_exits.py`).
 
@@ -331,7 +352,7 @@ TradingBot/
 ├── earnings_calendar.py       # Next-earnings-date warning
 ├── master_selector.py         # Applies the final strict rules
 ├── news_checker.py            # Bad-news headline block (Alpaca News API)
-├── paper_exits.py             # Daily stop / 2R / 20-day paper exits
+├── paper_exits.py             # Daily stop / half 2R + rest 2.5R / 20-day exits
 ├── paper_journal.py           # Persistent paper-trade journal
 ├── project_paths.py           # Central paths for generated files
 ├── scan_notifications.py      # Optional SMTP scan-summary email
@@ -412,8 +433,8 @@ summaries, configure SMTP settings in `.env`; without them the scanner still
 runs and logs that email was skipped.
 
 Confirmed TradingView BUY/SELL webhooks open and close simulated paper-journal
-records. The daily scan also closes paper trades at stop, 2R target or 20
-days. The journal does not submit broker orders.
+records. The daily scan also closes paper trades at the stop, the 2R / 2.5R
+targets or 20 days. The journal does not submit broker orders.
 
 ### Manual startup
 

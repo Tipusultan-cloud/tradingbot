@@ -123,6 +123,34 @@ class ReplayWindowTests(unittest.TestCase):
         self.assertEqual(entry_session_date("2026-01-06T02:00:00Z"), ENTRY_DATE)
 
 
+class HalfThen25RTests(unittest.TestCase):
+    # Half (5 shares) at 2R = 106, the rest at 2.5R = 107.5.
+
+    def test_half_at_2r_then_rest_at_2_5r(self):
+        state = run("HALF_2R_THEN_2_5R", [100, 103, 106.5, 108])
+        self.assertEqual(state["exit_reason"], "PARTIAL+TARGET")
+        self.assertEqual((state["partial_price"], state["partial_shares"]), (106, 5))
+        self.assertEqual(state["partial_date"], "2026-01-07")
+        self.assertEqual(state["exit_price"], 107.5)
+        self.assertAlmostEqual(state["pnl"], 5 * 6 + 5 * 7.5)
+
+    def test_one_bar_through_both_targets_sells_half_at_2r_first(self):
+        state = run("HALF_2R_THEN_2_5R", [100, 103, 108])
+        self.assertEqual(state["exit_reason"], "PARTIAL+TARGET")
+        self.assertAlmostEqual(state["pnl"], 5 * 6 + 5 * 7.5)
+
+    def test_rest_stops_at_entry_after_half(self):
+        state = run("HALF_2R_THEN_2_5R", [100, 103, 107, 99])
+        self.assertEqual(state["exit_reason"], "PARTIAL+TRAIL_STOP")
+        self.assertEqual(state["exit_price"], 100)
+        self.assertAlmostEqual(state["pnl"], 30)
+
+    def test_time_exit_after_20_days(self):
+        state = run("HALF_2R_THEN_2_5R", [100 + day * 0.1 for day in range(30)])
+        self.assertEqual(state["exit_reason"], "TIME_EXIT")
+        self.assertEqual(state["exit_date"], "2026-01-30")
+
+
 class DatabaseTests(unittest.TestCase):
     def setUp(self):
         folder = tempfile.TemporaryDirectory()
@@ -145,13 +173,14 @@ class DatabaseTests(unittest.TestCase):
         record_exit("AAA", 103.0, database_path=self.database)
 
         result = update_shadow_exits(self.database, fetch=self.fetch)
-        self.assertEqual(result, {"updated": 2, "failures": []})
+        self.assertEqual(result, {"updated": 3, "failures": []})
 
         comparison = get_shadow_comparison(self.database)
         row = comparison["trades"][0]
         self.assertEqual(row["trade_id"], trade["id"])
         self.assertAlmostEqual(row["actual_r"], 1.0)
         self.assertAlmostEqual(row["RULE_2R_20D_r"], 2.0)
+        self.assertAlmostEqual(row["HALF_2R_THEN_2_5R_r"], 2.25)
         self.assertGreater(row["HALF_2R_TRAIL_r"], 2.0)
         totals = comparison["totals"]
         self.assertEqual(totals["ACTUAL"]["closed"], 1)

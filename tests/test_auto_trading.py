@@ -19,8 +19,13 @@ from paper_exits import close_paper_trades
 from paper_journal import get_paper_trades, get_pending_broker_orders, record_entry
 from trade_manager import TradeError, open_trade, plan_order, sync
 
-SETTINGS = {"account": 10000, "risk_pct": 1, "atr_multiplier": 1.5, "reward_risk": 2}
+SETTINGS = {
+    "account": 10000, "risk_pct": 1, "atr_multiplier": 1.5,
+    "reward_risk": 2, "second_reward_risk": 2.5,
+}
 STOCK = {"ticker": "ABC", "atr": 2.0, "setup_score": 98}
+# A buy at 100 with ATR 2: stop 97, 33 shares; 16 sell at 106 (2R),
+# the other 17 at 107.5 (2.5R).
 
 
 def leg(leg_id, kind, status="new", price=None, filled_at=None):
@@ -39,20 +44,38 @@ class FakeAlpaca:
         self.submitted = []
         self.canceled = []
         self.closed = []
+        self.replaced = []
+        self.reject_oco = False
 
     def get_clock(self):
         return SimpleNamespace(is_open=self.market_open)
 
     def submit_order(self, request):
+        order_class = getattr(getattr(request, "order_class", None), "value", None)
+        if order_class == "oco" and self.reject_oco:
+            raise ConnectionError("Alpaca unavailable")
         self.submitted.append(request)
+        number = len(self.submitted)
+        if order_class == "bracket":
+            legs = [leg(f"tp-{number}", "limit"), leg(f"sl-{number}", "stop")]
+        elif order_class == "oco":
+            legs = [leg(f"sl-{number}", "stop")]
+        else:
+            legs = []
         order = SimpleNamespace(
-            id=f"order-{len(self.submitted)}", status="accepted",
-            filled_avg_price=None, filled_qty=0, filled_at=None,
-            legs=[leg(f"tp-{len(self.submitted)}", "limit"),
-                  leg(f"sl-{len(self.submitted)}", "stop")],
+            id=f"order-{number}", status="accepted",
+            filled_avg_price=None, filled_qty=0, filled_at=None, legs=legs,
         )
         self.orders[order.id] = order
         return order
+
+    def stop_out(self, order_id, price, when="2026-10-30T15:00:00Z"):
+        order = self.orders[order_id]
+        order.status = "canceled"
+        order.legs[-1] = leg(order.legs[-1].id, "stop", "filled", price, when)
+
+    def replace_order_by_id(self, order_id, request):
+        self.replaced.append((order_id, request.stop_price))
 
     def fill(self, order_id, price, qty, when="2026-10-29T13:35:00Z"):
         order = self.orders[order_id]
@@ -108,10 +131,12 @@ class JournalCase(unittest.TestCase):
 
 
 class PlanOrderTests(unittest.TestCase):
-    def test_one_percent_risk_with_2r_target(self):
+    def test_one_percent_risk_with_2r_and_2_5r_targets(self):
         plan = plan_order(100.0, 2.0, SETTINGS)
         # Stop distance 3 -> $100 risk buys 33 shares.
-        self.assertEqual(plan, {"shares": 33, "stop": 97.0, "target": 106.0})
+        self.assertEqual(
+            plan, {"shares": 33, "stop": 97.0, "target": 106.0, "target2": 107.5}
+        )
 
     def test_rejects_position_below_one_share(self):
         with self.assertRaisesRegex(TradeError, "below 1 share"):
@@ -119,21 +144,26 @@ class PlanOrderTests(unittest.TestCase):
 
 
 class OpenTradeTests(JournalCase):
-    def test_sends_bracket_order_and_remembers_it(self):
+    def test_sends_market_buy_and_remembers_it(self):
         order = self.buy()
 
         request = self.client.submitted[0].to_request_fields()
         self.assertEqual(request["symbol"], "ABC")
         self.assertEqual(request["qty"], 33)
-        self.assertEqual(request["order_class"].value, "bracket")
-        self.assertEqual(request["time_in_force"].value, "gtc")
-        self.assertEqual(request["stop_loss"], {"stop_price": 97.0})
-        self.assertEqual(request["take_profit"], {"limit_price": 106.0})
+        self.assertEqual(request["side"].value, "buy")
+        self.assertEqual(request["type"].value, "market")
+        self.assertNotIn("order_class", request)
         self.assertEqual(order["order_id"], "order-1")
+        self.assertEqual((order["target"], order["target2"]), (106.0, 107.5))
         pending = get_pending_broker_orders(self.database)
         self.assertEqual(
             (pending[0]["ticker"], pending[0]["strategy"], pending[0]["entry_source"]),
             ("ABC", "PULLBACK", "AUTO"),
+        )
+        self.assertEqual(
+            (pending[0]["stop_price"], pending[0]["target_price"],
+             pending[0]["target2_price"]),
+            (97.0, 106.0, 107.5),
         )
 
     def test_market_closed_sends_nothing(self):
@@ -164,10 +194,46 @@ class SyncTests(JournalCase):
         trade = result["filled"][0]
         self.assertEqual(trade["entry_price"], 100.4)
         self.assertEqual(trade["shares"], 33)
-        self.assertEqual((trade["stop_price"], trade["target_price"]), (97.0, 106.0))
+        self.assertEqual(
+            (trade["stop_price"], trade["target_price"], trade["target2_price"]),
+            (97.0, 106.0, 107.5),
+        )
         self.assertEqual(trade["entry_source"], "MANUAL")
         self.assertEqual(trade["broker_order_id"], "order-1")
         self.assertEqual(get_pending_broker_orders(self.database), [])
+
+    def test_fill_places_two_exit_orders(self):
+        self.buy()
+        self.client.fill("order-1", 100.4, 33)
+
+        self.sync()
+
+        half, rest = (r.to_request_fields() for r in self.client.submitted[1:])
+        for request in (half, rest):
+            self.assertEqual(request["side"].value, "sell")
+            self.assertEqual(request["order_class"].value, "oco")
+            self.assertEqual(request["time_in_force"].value, "gtc")
+            self.assertEqual(request["stop_loss"], {"stop_price": 97.0})
+        self.assertEqual((half["qty"], half["take_profit"]), (16, {"limit_price": 106.0}))
+        self.assertEqual((rest["qty"], rest["take_profit"]), (17, {"limit_price": 107.5}))
+        trade = get_paper_trades(database_path=self.database)["open"][0]
+        self.assertEqual(
+            (trade["half_order_id"], trade["rest_order_id"]), ("order-2", "order-3")
+        )
+
+    def test_failed_exit_orders_are_retried(self):
+        self.buy()
+        self.client.fill("order-1", 100.0, 33)
+        self.client.reject_oco = True
+
+        result = self.sync()
+
+        self.assertIn("exit orders not placed yet", result["errors"][0])
+        self.client.reject_oco = False
+        self.sync()
+        self.assertEqual(len(self.client.submitted), 3)
+        self.sync()
+        self.assertEqual(len(self.client.submitted), 3)
 
     def test_canceled_entry_frees_the_slot(self):
         self.buy()
@@ -187,21 +253,94 @@ class SyncTests(JournalCase):
         self.buy()
         self.client.fill("order-1", 100.0, 33)
         self.sync()
-        return self.client.orders["order-1"]
 
-    def test_stop_leg_fill_closes_trade(self):
-        order = self.filled_trade()
-        order.legs[1] = leg("sl-1", "stop", "filled", 96.9, "2026-10-30T15:00:00Z")
+    def test_stop_on_both_parts_closes_trade(self):
+        self.filled_trade()
+        self.client.stop_out("order-2", 96.9)
+        self.client.stop_out("order-3", 96.9)
 
         closed = self.sync()["closed"][0]
 
         self.assertEqual(closed["exit_reason"], "STOP")
-        self.assertEqual(closed["exit_price"], 96.9)
+        self.assertAlmostEqual(closed["exit_price"], 96.9)
         self.assertAlmostEqual(closed["realized_pnl"], -102.3)
 
-    def test_target_leg_fill_closes_trade(self):
-        order = self.filled_trade()
-        order.legs[0] = leg("tp-1", "limit", "filled", 106.0, "2026-10-30T15:00:00Z")
+    def test_waits_for_the_half_stop_before_closing(self):
+        self.filled_trade()
+        self.client.stop_out("order-3", 96.9)
+
+        self.assertEqual(self.sync()["closed"], [])
+
+    def test_2r_half_is_recorded_and_stop_moves_to_entry(self):
+        self.filled_trade()
+        self.client.fill("order-2", 106.0, 16, "2026-10-30T15:00:00Z")
+
+        result = self.sync()
+
+        self.assertEqual(result["closed"], [])
+        self.assertEqual(result["halves"][0]["partial_shares"], 16)
+        self.assertEqual(self.client.replaced, [("sl-3", 100.0)])
+        trade = get_paper_trades(database_path=self.database)["open"][0]
+        self.assertEqual(
+            (trade["partial_exit_price"], trade["active_stop_price"]), (106.0, 100.0)
+        )
+        self.assertEqual((trade["shares_open"], trade["risk_at_stop"]), (17, 0))
+        self.sync()
+        self.assertEqual(len(self.client.replaced), 1)
+
+    def test_rest_at_2_5r_closes_trade(self):
+        self.filled_trade()
+        self.client.fill("order-2", 106.0, 16)
+        self.sync()
+        self.client.fill("order-3", 107.5, 17)
+
+        closed = self.sync()["closed"][0]
+
+        self.assertEqual(closed["exit_reason"], "PARTIAL+TARGET")
+        self.assertEqual(closed["exit_price"], 107.5)
+        self.assertAlmostEqual(closed["realized_pnl"], 16 * 6 + 17 * 7.5)
+
+    def test_rest_stopped_at_entry_after_half(self):
+        self.filled_trade()
+        self.client.fill("order-2", 106.0, 16)
+        self.sync()
+        self.client.stop_out("order-3", 100.0)
+
+        closed = self.sync()["closed"][0]
+
+        self.assertEqual(closed["exit_reason"], "PARTIAL+STOP")
+        self.assertAlmostEqual(closed["realized_pnl"], 96.0)
+
+    def test_both_targets_between_syncs(self):
+        self.filled_trade()
+        self.client.fill("order-2", 106.0, 16)
+        self.client.fill("order-3", 107.5, 17)
+
+        result = self.sync()
+
+        self.assertEqual(len(result["halves"]), 1)
+        self.assertAlmostEqual(result["closed"][0]["realized_pnl"], 223.5)
+
+    def test_one_share_trade_sells_at_2_5r(self):
+        self.buy({"ticker": "BIG", "atr": 40.0}, price=100.0)
+        self.client.fill("order-1", 100.0, 1)
+        self.sync()
+
+        request = self.client.submitted[1].to_request_fields()
+        self.assertEqual(len(self.client.submitted), 2)
+        self.assertEqual((request["qty"], request["take_profit"]), (1, {"limit_price": 250.0}))
+
+    def test_old_bracket_trade_still_closes_on_its_legs(self):
+        record_entry(
+            "OLD", 100.0, 2.0, 33, 97.0, 106.0, database_path=self.database,
+            entry_time="2026-10-29T13:35:00Z", broker_order_id="bracket-1",
+        )
+        self.client.orders["bracket-1"] = SimpleNamespace(
+            id="bracket-1", status="filled", legs=[
+                leg("tp-old", "limit", "filled", 106.0, "2026-10-30T15:00:00Z"),
+                leg("sl-old", "stop", "canceled"),
+            ],
+        )
 
         closed = self.sync()["closed"][0]
 
@@ -219,10 +358,21 @@ class SyncTests(JournalCase):
 
         closed = self.sync(today=date(2026, 11, 30))["closed"][0]
 
-        self.assertEqual(self.client.canceled, ["tp-1", "sl-1"])
+        self.assertEqual(self.client.canceled, ["order-2", "order-3"])
         self.assertEqual(self.client.closed, ["ABC"])
         self.assertEqual(closed["exit_reason"], "TIME_EXIT")
         self.assertEqual(closed["exit_price"], 104.0)
+
+    def test_20_sessions_after_half_sells_the_rest(self):
+        self.filled_trade()
+        self.client.fill("order-2", 106.0, 16)
+        self.sync()
+
+        closed = self.sync(today=date(2026, 11, 30))["closed"][0]
+
+        self.assertEqual(self.client.canceled, ["order-3"])
+        self.assertEqual(closed["exit_reason"], "PARTIAL+TIME_EXIT")
+        self.assertAlmostEqual(closed["realized_pnl"], 16 * 6 + 17 * 4)
 
     def test_daily_paper_check_skips_alpaca_trades(self):
         self.filled_trade()
@@ -232,7 +382,9 @@ class SyncTests(JournalCase):
             fetch=lambda ticker, entry_date: self.fail("should not fetch"),
         )
 
-        self.assertEqual(result, {"closed": [], "still_open": [], "failures": []})
+        self.assertEqual(
+            result, {"closed": [], "halves": [], "still_open": [], "failures": []}
+        )
 
 
 class SellTests(JournalCase):
@@ -240,7 +392,6 @@ class SellTests(JournalCase):
         self.buy()
         self.client.fill("order-1", 100.0, 33)
         self.sync()
-        return self.client.orders["order-1"]
 
     def sell(self, ticker="ABC"):
         return trade_manager.sell_trade(
@@ -253,7 +404,7 @@ class SellTests(JournalCase):
 
         closed = self.sell()
 
-        self.assertEqual(self.client.canceled, ["tp-1", "sl-1"])
+        self.assertEqual(self.client.canceled, ["order-2", "order-3"])
         self.assertEqual(self.client.closed, ["ABC"])
         self.assertEqual(closed["exit_reason"], "MANUAL_SELL")
         self.assertAlmostEqual(closed["realized_pnl"], 132.0)
@@ -267,8 +418,9 @@ class SellTests(JournalCase):
         self.assertEqual(self.client.closed, [])
 
     def test_stop_already_filled_is_recorded_not_sold_again(self):
-        order = self.filled_trade()
-        order.legs[1] = leg("sl-1", "stop", "filled", 96.9, "2026-10-30T15:00:00Z")
+        self.filled_trade()
+        self.client.stop_out("order-2", 96.9)
+        self.client.stop_out("order-3", 96.9)
 
         with self.assertRaisesRegex(TradeError, "already closed at its stop"):
             self.sell()

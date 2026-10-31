@@ -12,7 +12,8 @@ from paper_journal import close_trade, get_paper_trades, record_entry, record_ex
 # Monday 2026-01-05, 15:00 UTC = 10:00 New York.
 ENTRY_TIME = "2026-01-05T15:00:00Z"
 ENTRY_DATE = date(2026, 1, 5)
-# Entry 100, stop 97 -> risk 3/share; 2R target = 106.
+# Entry 100, stop 97 -> risk 3/share; half (5 shares) at 2R = 106, the
+# rest at 2.5R = 107.5.
 
 
 def bars(closes):
@@ -66,14 +67,47 @@ class PaperExitTests(unittest.TestCase):
         self.assertEqual(trade["exit_time"], "2026-01-07T21:00:00Z")
         self.assertEqual(trade["strategy"], "PULLBACK")
 
-    def test_target_hit_closes_trade(self):
+    def test_2r_sells_half_and_moves_stop_to_entry(self):
         self.open_trade()
 
-        trade = self.run_exits({"ABC": bars([100, 103, 107])})["closed"][0]
+        result = self.run_exits({"ABC": bars([100, 103, 107])})
 
-        self.assertEqual(trade["exit_reason"], "TARGET")
-        self.assertEqual(trade["exit_price"], 106)
-        self.assertAlmostEqual(trade["realized_pnl"], 60)
+        self.assertEqual(result["closed"], [])
+        self.assertEqual(result["still_open"], ["ABC"])
+        trade = get_paper_trades(database_path=self.database)["open"][0]
+        self.assertEqual((trade["partial_shares"], trade["partial_exit_price"]), (5, 106))
+        self.assertEqual(trade["partial_exit_time"], "2026-01-07T21:00:00Z")
+        self.assertEqual(trade["active_stop_price"], 100)
+        self.assertEqual((trade["shares_open"], trade["risk_at_stop"]), (5, 0))
+
+    def test_rest_sells_at_2_5r(self):
+        self.open_trade()
+        self.run_exits({"ABC": bars([100, 103, 107])})
+
+        trade = self.run_exits({"ABC": bars([100, 103, 107, 108])})["closed"][0]
+
+        self.assertEqual(trade["exit_reason"], "PARTIAL+TARGET")
+        self.assertEqual(trade["exit_price"], 107.5)
+        self.assertAlmostEqual(trade["realized_pnl"], 5 * 6 + 5 * 7.5)
+
+    def test_half_and_rest_on_the_same_day(self):
+        self.open_trade()
+
+        result = self.run_exits({"ABC": bars([100, 103, 108])})
+
+        self.assertEqual(len(result["halves"]), 1)
+        self.assertEqual(result["closed"][0]["exit_reason"], "PARTIAL+TARGET")
+        self.assertAlmostEqual(result["closed"][0]["realized_pnl"], 67.5)
+
+    def test_rest_stops_at_entry_after_half(self):
+        self.open_trade()
+
+        trade = self.run_exits({"ABC": bars([100, 103, 107, 99])})["closed"][0]
+
+        # A stop above the original one is named TRAIL_STOP by the replay.
+        self.assertEqual(trade["exit_reason"], "PARTIAL+TRAIL_STOP")
+        self.assertEqual(trade["exit_price"], 100)
+        self.assertAlmostEqual(trade["realized_pnl"], 30)
 
     def test_gap_below_stop_fills_at_open(self):
         self.open_trade()
