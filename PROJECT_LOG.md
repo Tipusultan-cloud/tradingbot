@@ -227,6 +227,78 @@ time. The exact final one-trade-per-week strategy has **not** been backtested.
 
 ## 5. Activity Log (newest first)
 
+### 2026-10-31 — Half of idle cash parked in SPY (built)
+
+**What:** New `cash_parking.py`. After the daily buys, `auto_trader.py`
+keeps `SPY_PARK_FRACTION` (default 0.5) of the bot's idle cash in SPY on the
+Alpaca paper account. The dashboard's hero card shows "Parked in SPY" (value,
+shares, P/L, target).
+
+**Why:** The backtest below: 13.8% → 22.3% a year over 10 years, worst drop
+12% → 23%. The user chose half rather than all (24.2%, worst drop 34%).
+
+**How:** Idle cash = `PAPER_ACCOUNT_BALANCE` minus open trades (remaining
+shares at entry price) and waiting entry orders (latest price). Target =
+fraction × idle. A notional market buy or a fractional sell moves the SPY
+position to the target, only while the market is open; changes under 2% of
+the balance are skipped; fraction 0 sells all parked SPY. Not a journal
+trade, so it uses no slot; any SPY in the paper account counts as parked.
+The dashboard reads the plan with the once-a-minute Alpaca sync. Read-only
+check on the real paper account: $2,155.02 in FTNT + MPC, idle $7,844.98,
+next run buys about $3,922 of SPY. Differences from the backtest: SPY is
+adjusted once a day at the scan (not at every close), and a dashboard Buy
+does not sell SPY first (the paper account has spare buying power; the next
+run trims SPY). 232 tests pass.
+
+### 2026-10-31 — Backtest: idle cash parked in SPY (no code changed yet)
+
+**What:** 10-year test (start $7,000, 1% risk, 2 slots, old 2R exit) of
+keeping cash that is not in a trade in SPY: free cash buys SPY at the close,
+an entry sells just enough SPY at the next open, 0.05% slippage per SPY
+trade.
+
+| 10 years | per year | total | worst drop |
+|---|---|---|---|
+| 2 slots (now) | 13.8% | +266% | 12.2% |
+| 2 slots + half of idle cash in SPY | 22.3% | +651% | 22.9% |
+| 2 slots + all idle cash in SPY | 24.2% | +775% | 34.4% |
+| Just hold SPY | 15.3% | +316% | 33.7% |
+
+Better in both 5-year halves (half in SPY: 22.4% / 22.5% per year vs
+12.4% / 14.6% now). 2022: now -1.6%, half -11.8%, all -15.7%, SPY -18.2%.
+
+**Why:** The bot is in trades only part of the time; idle cash earned
+nothing, which is why the bot trailed SPY.
+
+**How:** Scratchpad script copying the `backtest_pullback_slots.py` engine
+with a SPY cash sweep. Same limits as that backtest (today's S&P 500
+members). Not built into the bot yet; taxes on frequent SPY sales would
+matter with real money in a taxable account.
+
+### 2026-10-31 — Two Bot 2 ideas tested and rejected (no code changed)
+
+**What:** 10-year backtests (start $7,000, 1% risk, old 2R exit for both
+sides, `backtest_pullback_slots.py` engine) of two Bot 2 changes:
+1. Only buy dips while SPY closes above its 200-day average: Bot 2 alone
+   +101% → +43% (drawdown 10% → 16%); 2 slots +282% → +128% (12% → 18%);
+   worse in both 5-year halves and in 2022 (2 slots -$224 → -$995).
+2. Pick dips from the S&P 500 plus each day's 200 most-traded other US
+   stocks (live `SP500_TOP200` rule, rebuilt daily from trailing data):
+   Bot 2 alone +101% → +3.5% (drawdown 10% → 23%); 2 slots +266% → +36%.
+   Trades in the added stocks won only 36% of the time; last 5 years Bot 2
+   alone lost 8.7%. This happened even though the test favors the added
+   stocks (only stocks listed today).
+
+**Why:** Suggested ways to improve Bot 2. Buying dips right after a market
+drop is where Bot 2 earns the most, so a market filter removes its best
+trades; the most-traded non-S&P stocks are volatile and their dips keep
+falling.
+
+**How:** Scripts in the session scratchpad reusing the backtest modules; the
+top-200 membership came from `results/backtests/us_stock_prices_cache.pkl`.
+Decision: keep Bot 2 on the S&P 500 with no market filter. (With
+`UNIVERSE_SOURCE=SP500_TOP200` Bot 1 also tested worse, 2026-10-27.)
+
 ### 2026-10-31 — Dashboard redesign
 
 **What:** New look for `web/dashboard.html` (same data, same Buy/Sell

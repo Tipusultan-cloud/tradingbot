@@ -108,7 +108,7 @@
     .hero-figure { position: relative; margin-top: 6px; font-size: clamp(48px, 7vw, 68px); font-weight: 800; letter-spacing: -.045em; line-height: 1; transition: color .4s; }
     .hero-figure.positive { color: var(--good); } .hero-figure.negative { color: var(--bad); }
     .hero-sub { position: relative; margin-top: 10px; color: var(--text-2); font-size: 13px; }
-    .hero-stats { position: relative; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 26px; }
+    .hero-stats { position: relative; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 26px; }
     .stat { padding: 14px 16px; border-radius: 14px; background: rgba(255,255,255,.035); border: 1px solid var(--line); }
     .stat span { display: block; color: var(--muted); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; }
     .stat strong { display: block; margin-top: 8px; font-size: 22px; font-weight: 700; letter-spacing: -.03em; }
@@ -293,7 +293,7 @@
       .topbar-inner, .shell { width: calc(100% - 32px); }
       .status-pill .label { display: none; }
       .hero { padding: 22px 20px; }
-      .hero-stats { grid-template-columns: 1fr; }
+      .hero-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .funnel { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .pos-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .sector-row { grid-template-columns: 104px minmax(0, 1fr) 56px; gap: 8px; }
@@ -399,6 +399,7 @@
           <div class="stat"><span>Realized P&amp;L</span><strong id="paper-realized-pnl">—</strong><small id="realized-note">closed paper trades</small></div>
           <div class="stat"><span>Risk to stops</span><strong id="open-risk">—</strong><small>if every stop is hit</small></div>
           <div class="stat"><span>Win rate</span><strong id="win-rate">—</strong><small id="win-note">closed paper trades</small></div>
+          <div class="stat" title="Half of the cash not in a trade is kept in SPY (SPY_PARK_FRACTION)"><span>Parked in SPY</span><strong id="parked-value">—</strong><small id="parked-note">idle cash in SPY</small></div>
         </div>
       </article>
       <div class="side-stack">
@@ -1356,6 +1357,15 @@
         setText("open-risk", money(summary.open_risk_at_stop ?? 0));
         setText("win-rate", summary.win_rate == null ? "—" : `${number(summary.win_rate, 1)}%`);
         byId("win-note").textContent = summary.closed_trades ? `${number(summary.wins)} won · ${number(summary.losses)} lost` : "no closed trades yet";
+        const parking = broker.parking;
+        setText("parked-value", parking ? money(parking.value) : "—");
+        byId("parked-note").textContent = !broker.enabled
+          ? "needs auto trading on"
+          : !parking
+            ? "checking Alpaca…"
+            : parking.shares
+              ? `${number(parking.shares, 3)} SPY · ${money(parking.unrealized_pl, true)} · target ${money(parking.target)}`
+              : `target ${money(parking.target)} · bought at the next run`;
         byId("journal-summary").textContent = `${number(summary.closed_trades ?? 0)} closed · ${summary.win_rate == null ? "—" : `${number(summary.win_rate, 1)}%`} win rate · paper only`;
 
         renderMarket(data.market || {});

@@ -39,6 +39,7 @@ from broker import (
     latest_prices,
 )
 from paper_journal import get_pending_broker_orders
+from cash_parking import plan as parking_plan
 from trade_manager import SOURCE_MANUAL, TradeError, open_trade, sell_trade
 from trade_manager import sync as broker_sync
 
@@ -123,6 +124,7 @@ MAX_OPEN_TRADES = max_open_trades()
 # Dashboard refreshes sync Alpaca fills and exits at most this often.
 BROKER_SYNC_SECONDS = 60
 _last_broker_sync = 0.0
+_last_parking = None
 LIVE_PRICE_SECONDS = 60
 _live_prices = {"at": 0.0, "tickers": (), "prices": {}}
 
@@ -583,15 +585,18 @@ def get_dashboard_data():
 
 
 def _broker_state(errors):
-    """Auto-trading status, Alpaca orders waiting to fill, rate-limited sync."""
-    global _last_broker_sync
+    """Auto-trading status, Alpaca orders waiting to fill, rate-limited sync
+    and the SPY cash-parking status (refreshed with the sync)."""
+    global _last_broker_sync, _last_parking
     enabled, reason = auto_trading_status()
     if enabled and time.monotonic() - _last_broker_sync >= BROKER_SYNC_SECONDS:
         _last_broker_sync = time.monotonic()
         try:
-            result = broker_sync(get_trading_client(), latest_price)
+            client = get_trading_client()
+            result = broker_sync(client, latest_price)
             for error in result["errors"]:
                 errors.append({"source": "Alpaca", "message": error})
+            _last_parking = parking_plan(client, latest_price)
         except Exception as exc:  # network and API errors
             errors.append({
                 "source": "Alpaca",
@@ -602,7 +607,12 @@ def _broker_state(errors):
         pending = get_pending_broker_orders()
     except (OSError, sqlite3.Error):
         pending = []
-    return {"enabled": enabled, "reason": reason, "pending_orders": pending}
+    return {
+        "enabled": enabled,
+        "reason": reason,
+        "pending_orders": pending,
+        "parking": _last_parking if enabled else None,
+    }
 
 
 def _live_prices_for(tickers, enabled, errors):

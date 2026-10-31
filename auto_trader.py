@@ -1,7 +1,8 @@
 """Automatic Alpaca paper trades for the bots' slot picks.
 
   python auto_trader.py --sync   record fills and exits only
-  python auto_trader.py          sync, buy the slot picks, sync again
+  python auto_trader.py          sync, buy the slot picks, sync again,
+                                 then park idle cash in SPY (cash_parking.py)
 
 Runs in the daily scan: --sync before slot_selector.py (so closed trades
 free their slots), then the full run after it. Does nothing unless
@@ -14,6 +15,7 @@ import sys
 import time
 
 from broker import auto_trading_status, get_trading_client, latest_price
+from cash_parking import rebalance
 from project_paths import SLOT_SELECTION_JSON
 from slot_selector import load_fresh
 from trade_manager import SOURCE_AUTO, TradeError, open_trade, sync
@@ -67,6 +69,25 @@ def main(argv=None):
     if "--sync" in argv:
         return 0
 
+    buy_picks(client)
+    park_cash(client)
+    return 0
+
+
+def park_cash(client):
+    try:
+        state = rebalance(client, latest_price)
+    except Exception as exc:  # Alpaca rejections and network errors
+        print(f"SPY parking failed, will retry next run: {exc}")
+        return
+    print(
+        f"SPY PARKING ({state['fraction']:.0%} of idle cash): idle "
+        f"${state['idle']:,.2f}, target ${state['target']:,.2f}, held "
+        f"${state['value']:,.2f} -> {state['action']}"
+    )
+
+
+def buy_picks(client):
     warnings = []
     slots = load_fresh(SLOT_SELECTION_JSON, "Slot selection", warnings)
     for warning in warnings:
@@ -74,7 +95,7 @@ def main(argv=None):
     picks = (slots or {}).get("selections") or []
     if not picks:
         print("No slot picks to buy.")
-        return 0
+        return
 
     placed = 0
     for stock in picks:
@@ -96,7 +117,6 @@ def main(argv=None):
     if placed:
         time.sleep(FILL_WAIT_SECONDS)
         print_sync(sync(client, latest_price))
-    return 0
 
 
 if __name__ == "__main__":

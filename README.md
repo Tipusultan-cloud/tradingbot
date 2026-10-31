@@ -288,6 +288,15 @@ gain is small. Selling everything at 3R was worse (+37%). Trades opened before
   (`MANUAL_SELL`), only while the market is open.
 - Orders waiting to fill hold a slot. TradingView alerts are ignored while
   auto trading is on, so the journal always matches the Alpaca account.
+- **Idle cash in SPY:** after the daily buys, `cash_parking.py` keeps half
+  (`SPY_PARK_FRACTION`, default 0.5; 0 turns it off) of the bot's idle cash
+  in SPY. Idle cash is `PAPER_ACCOUNT_BALANCE` minus open trades and waiting
+  orders. SPY is bought or sold to match, only while the market is open,
+  and changes under 2% of the balance are skipped. SPY is not a journal
+  trade and never uses a slot; any SPY in the paper account counts as
+  parked cash. Backtest (10 years, 2 slots): 13.8% a year with idle cash
+  unused, 22.3% with half in SPY (worst drop 12% → 23%); SPY alone 15.3%
+  (worst drop 34%).
 - A live (real-money) Alpaca account is refused; there is no setting for it.
 
 **Automatic paper exits:** each daily scan runs `paper_exits.py` before the
@@ -535,7 +544,7 @@ Execution order:
 6. auto_trader.py --sync (Alpaca fills and exits; a failure only warns)
 7. scanner_pullback.py (a failure only warns)
 8. slot_selector.py (a failure only warns)
-9. auto_trader.py (buys slot picks if AUTO_TRADING=true; a failure only warns)
+9. auto_trader.py (buys slot picks and parks idle cash in SPY if AUTO_TRADING=true; a failure only warns)
 10. shadow_exits.py (a failure only warns)
 ```
 
