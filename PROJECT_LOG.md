@@ -227,6 +227,37 @@ time. The exact final one-trade-per-week strategy has **not** been backtested.
 
 ## 5. Activity Log (newest first)
 
+### 2026-10-31 — Dashboard redesign
+
+**What:** New look for `web/dashboard.html` (same data, same Buy/Sell
+endpoints): sticky top bar with section links, live status and a refresh
+button that shows the 30-second countdown; a hero card with the live open
+P/L, realized P&L, risk to stops and win rate; market regime and the two
+trade slots; a scan funnel (200 → technical → top-down → A+ / pullbacks);
+open positions as cards with a **price track** (stop, entry, 2R, 2.5R and
+the live price); bot lists in tabs (Bot 1 / Bot 2, the choice remembered in
+the browser); a sector chart (blue = stronger than SPY, red = weaker, with a
+table view); exit-rule cards; a pipeline timeline. Pop-up alerts after
+Buy/Sell became toast messages (the confirm dialog stays).
+
+**Why:** Asked for an interface that looks impressive; the price track and
+sector chart also make the open risk and sector strength readable at a
+glance. Fixed outdated text ("bracket orders with 2R target", "Read-only
+dashboard", "No trade is placed automatically").
+
+**How:** One HTML file, plain JS, Inter from Google Fonts (falls back to the
+system font offline). Every value is set with `textContent`. Checked with
+headless Edge screenshots at 1440 px and 390 px. No Python changed.
+
+**Second pass (same day):** Central (CST/CDT) and New York clocks (a
+scrolling ticker tape was tried and removed at the user's request); rotating glow border on the hero card; the open P/L counts up to its
+new value; Bot 1 "A+ Hunter" and Bot 2 "Dip Buyer" cards with a radar
+animation and a status worked out from the data (Standing by / Hunting /
+Holding N, with the reason); a Bot activity feed built from the journal
+(buys, half sales, closes, orders waiting, last scan); confetti plus a
+message when a refresh shows a newly closed trade that raised realized
+P&L. All animations stop under "reduce motion".
+
 ### 2026-10-31 — New exit: half at 2R, the rest at 2.5R
 
 **What:** New trades sell half the shares at 2R; the stop of the rest then
