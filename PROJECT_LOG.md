@@ -227,6 +227,15 @@ time. The exact final one-trade-per-week strategy has **not** been backtested.
 
 ## 5. Activity Log (newest first)
 
+### 2026-10-31 — Dashboard renamed to SultanQuant
+
+**What:** Top bar, browser tab and footer now read "SultanQuant" ("My own
+trading engine · 3 bots"), replacing "TradingBot by Sultan · paper trading".
+
+**Why:** The user wanted a name that says they built it.
+
+**How:** Text only in `web/dashboard.html`.
+
 ### 2026-10-31 — Bot 3: Momentum Rider (paper only)
 
 **What:** A third bot that buys a stock the day after it jumps on huge
