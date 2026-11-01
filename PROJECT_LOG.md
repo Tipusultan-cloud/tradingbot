@@ -234,7 +234,10 @@ trading engine · 3 bots"), replacing "TradingBot by Sultan · paper trading".
 
 **Why:** The user wanted a name that says they built it.
 
-**How:** Text only in `web/dashboard.html`.
+**How:** Text only in `web/dashboard.html`. New logo the same day, chosen
+from four options: a gold crown (sultan) with a rising chart inside, on a
+dark tile with a gold glow, inline SVG with a light sweep every 6 seconds;
+the same mark is the browser-tab icon (SVG data URI).
 
 ### 2026-10-31 — Bot 3: Momentum Rider (paper only)
 
