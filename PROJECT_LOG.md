@@ -227,6 +227,30 @@ time. The exact final one-trade-per-week strategy has **not** been backtested.
 
 ## 5. Activity Log (newest first)
 
+### 2026-11-02 — Each bot tab shows only its own area; REGN stop fixed
+
+**What:**
+- Dashboard: each bot tab (Bot 1 / Bot 2 / Bot 3) is its own colored panel
+  with only that bot's content: description, paper results, its own next
+  pick, and its stock list. "Best A+ opportunity" moved into the Bot 1
+  panel. The three bot cards at the top are clickable ("View list →") and
+  open that bot's panel; `/#bot3` links open a panel directly. A pick that
+  is already held is no longer shown as "next", and "Held" flags and slot
+  use come from the live journal, not the morning's slot file.
+- First live Bot 3 trade: REGN, 2 shares bought 2026-11-02 at $950.00, and
+  $2,973 of SPY parked by `cash_parking.py`. The buy took 18 s to fill, so
+  `auto_trader.py` (10 s wait) left it to the next sync, which came from the
+  dashboard server still running pre-Bot-3 code: REGN had no stop order.
+  Fixed by running `auto_trader.py --sync` (new code): GTC stop for 2 REGN
+  at $907.69 placed and recorded.
+
+**Why:** The user wanted a click on a bot to show only that bot; the REGN
+gap was found while checking the new panels.
+
+**How:** `auto_trader.py` now keeps syncing (up to 9 × 10 s) until no entry
+order is waiting, so the run that buys also places the stop / exit orders.
+Restarting the dashboard server after code changes is required.
+
 ### 2026-11-01 — Dashboard responsive fixes
 
 **What:** Checked the dashboard at 390 px (phone), 768 px (tablet) and

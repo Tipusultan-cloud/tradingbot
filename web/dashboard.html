@@ -133,7 +133,7 @@
     .slot.filled { border-style: solid; background: rgba(255,255,255,.035); }
     .slot.pending { border-color: rgba(56,189,248,.45); }
     .slot-n { color: var(--muted); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; }
-    .slot-main { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+    .slot-main { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 10px; }
     .slot-ticker { font-weight: 750; font-size: 16px; }
     .slot-pnl { margin-left: auto; font-weight: 700; font-size: 14px; white-space: nowrap; }
     .slot-free { color: var(--muted); font-size: 13px; margin-top: 10px; }
@@ -202,6 +202,29 @@
     .tab[aria-selected="true"] { background: rgba(255,255,255,.09); color: var(--text); box-shadow: 0 1px 0 rgba(255,255,255,.08) inset; }
     .tab .count { min-width: 22px; padding: 1px 7px; border-radius: 999px; background: rgba(255,255,255,.08); font-size: 11px; }
     .tab { white-space: nowrap; flex: none; }
+    .tab-extra { margin-left: -8px; }
+    .tab[aria-selected="true"] { box-shadow: 0 1px 0 rgba(255,255,255,.08) inset, 0 0 0 1px color-mix(in srgb, var(--tab-color, #fff) 45%, transparent); }
+
+    /* One panel per bot: only the selected bot's area is shown. */
+    .bot-panel { animation: fadeUp .35s cubic-bezier(.2,.7,.2,1) both; }
+    .bot-area { overflow: hidden; border-top: 2px solid var(--bot); }
+    .bot-area::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 160px; background: radial-gradient(ellipse at 0% 0%, color-mix(in srgb, var(--bot) 16%, transparent), transparent 70%); pointer-events: none; }
+    .area-head { position: relative; display: flex; align-items: center; gap: 14px; padding: 20px 20px 0; }
+    .area-head .radar { width: 44px; height: 44px; }
+    .area-head h3 { margin: 0; font-size: 17px; font-weight: 750; letter-spacing: -.01em; }
+    .area-head p { margin: 4px 0 0; color: var(--text-2); font-size: 13px; line-height: 1.5; }
+    .area-sub { margin: 16px 20px 0; border-radius: 14px; border: 1px solid var(--line); background: rgba(255,255,255,.025); }
+    .area-sub .card-head { padding-top: 14px; }
+    .bot-next { display: flex; align-items: center; gap: 12px; margin: 16px 20px 0; padding: 12px 14px; border-radius: 14px; border: 1px dashed color-mix(in srgb, var(--bot) 45%, transparent); background: color-mix(in srgb, var(--bot) 7%, transparent); font-size: 13px; color: var(--text-2); }
+    .bot-next strong { color: var(--text); }
+    .bot-next .label { color: color-mix(in srgb, var(--bot) 70%, #fff); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; flex: none; }
+
+    /* The bot cards at the top open that bot's area. */
+    .bot-card[data-bot] { cursor: pointer; transition: transform .2s, border-color .2s; }
+    .bot-card[data-bot]:hover { transform: translateY(-3px); border-color: color-mix(in srgb, var(--bot) 50%, transparent); }
+    .bot-card[data-bot]:focus-visible { outline: 2px solid var(--bot); outline-offset: 3px; }
+    .open-hint { margin-top: 12px; font-size: 11.5px; font-weight: 600; color: color-mix(in srgb, var(--bot) 70%, #fff); opacity: .75; }
+    .bot-card[data-bot]:hover .open-hint { opacity: 1; }
     .tabs { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
     .section-title { flex-wrap: wrap; }
     .bot-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; padding: 16px 20px 0; }
@@ -451,23 +474,26 @@
     </section>
 
     <section class="bots-row">
-      <article class="card bot-card fade-in" style="--bot: var(--gold); animation-delay:.22s">
+      <article class="card bot-card fade-in" data-bot="bot1" role="button" tabindex="0" aria-label="Open the Bot 1 list" style="--bot: var(--gold); animation-delay:.22s">
         <div class="bot-head"><div id="bot1-radar" class="radar idle"></div><div><div class="bot-title">Bot 1 · A+ Hunter</div><div class="bot-role">Buys strength when everything lines up</div></div></div>
         <div id="bot1-state" class="bot-state idle"><span class="pulse"></span><span>Starting…</span></div>
         <div id="bot1-line" class="bot-line"></div>
         <div id="bot1-mini" class="bot-mini"></div>
+        <div class="open-hint">View list →</div>
       </article>
-      <article class="card bot-card fade-in" style="--bot: var(--violet); animation-delay:.28s">
+      <article class="card bot-card fade-in" data-bot="bot2" role="button" tabindex="0" aria-label="Open the Bot 2 list" style="--bot: var(--violet); animation-delay:.28s">
         <div class="bot-head"><div id="bot2-radar" class="radar idle"></div><div><div class="bot-title">Bot 2 · Dip Buyer</div><div class="bot-role">Buys market leaders on a pullback</div></div></div>
         <div id="bot2-state" class="bot-state idle"><span class="pulse"></span><span>Starting…</span></div>
         <div id="bot2-line" class="bot-line"></div>
         <div id="bot2-mini" class="bot-mini"></div>
+        <div class="open-hint">View list →</div>
       </article>
-      <article class="card bot-card fade-in" style="--bot: var(--rose); animation-delay:.34s">
+      <article class="card bot-card fade-in" data-bot="bot3" role="button" tabindex="0" aria-label="Open the Bot 3 momentum list" style="--bot: var(--rose); animation-delay:.34s">
         <div class="bot-head"><div id="bot3-radar" class="radar idle"></div><div><div class="bot-title">Bot 3 · Momentum Rider</div><div class="bot-role">Rides big jumps with a trailing stop</div></div></div>
         <div id="bot3-state" class="bot-state idle"><span class="pulse"></span><span>Starting…</span></div>
         <div id="bot3-line" class="bot-line"></div>
         <div id="bot3-mini" class="bot-mini"></div>
+        <div class="open-hint">View list →</div>
       </article>
       <article class="card feed-card fade-in" style="animation-delay:.4s">
         <div class="card-head"><h3>Bot activity</h3><span class="hint">latest first</span></div>
@@ -484,48 +510,48 @@
 
     <!-- Bots -->
     <div id="bots" class="section-title">
-      <div><h2>Today's stock lists</h2><p>Every stock each bot would buy. The bots buy the top picks themselves; Buy lets you pick by hand.</p></div>
+      <div><h2>Today's stock lists</h2><p>Pick a bot to see only its area: its next pick and every stock it would buy. Buy lets you pick by hand.</p></div>
       <div class="tabs" role="tablist" aria-label="Bot lists">
-        <button class="tab" role="tab" id="tab-bot1" aria-controls="panel-bot1" aria-selected="false" data-bot="bot1"><span class="chip-dot" style="background:var(--gold)"></span>Bot 1<span class="tab-extra"> · A+</span><span id="bot1-count" class="count">0</span></button>
-        <button class="tab" role="tab" id="tab-bot2" aria-controls="panel-bot2" aria-selected="true" data-bot="bot2"><span class="chip-dot" style="background:var(--violet)"></span>Bot 2<span class="tab-extra"> · Pullback</span><span id="bot2-count" class="count">0</span></button>
-        <button class="tab" role="tab" id="tab-bot3" aria-controls="panel-bot3" aria-selected="false" data-bot="bot3"><span class="chip-dot" style="background:var(--rose)"></span>Bot 3<span class="tab-extra"> · Momentum</span><span id="bot3-count" class="count">0</span></button>
+        <button class="tab" role="tab" id="tab-bot1" style="--tab-color: var(--gold)" aria-controls="panel-bot1" aria-selected="false" data-bot="bot1"><span class="chip-dot" style="background:var(--gold)"></span>Bot 1<span class="tab-extra"> · A+</span><span id="bot1-count" class="count">0</span></button>
+        <button class="tab" role="tab" id="tab-bot2" style="--tab-color: var(--violet)" aria-controls="panel-bot2" aria-selected="true" data-bot="bot2"><span class="chip-dot" style="background:var(--violet)"></span>Bot 2<span class="tab-extra"> · Pullback</span><span id="bot2-count" class="count">0</span></button>
+        <button class="tab" role="tab" id="tab-bot3" style="--tab-color: var(--rose)" aria-controls="panel-bot3" aria-selected="false" data-bot="bot3"><span class="chip-dot" style="background:var(--rose)"></span>Bot 3<span class="tab-extra"> · Momentum</span><span id="bot3-count" class="count">0</span></button>
       </div>
     </div>
-    <section class="grid-2">
-      <article class="card">
-        <div class="card-head"><h3><span class="chip-dot" style="background:var(--gold)"></span>Best A+ opportunity</h3><span id="candidate-status" class="tag">NO TRADE</span></div>
-        <div id="candidate-panel" class="card-body"><div class="empty">No qualifying candidate in the latest scan.</div></div>
-      </article>
-      <article class="card">
-        <div class="card-head"><h3>Next picks</h3><span id="slot-summary" class="hint">—</span></div>
-        <div id="slots-list" class="card-body"></div>
-      </article>
-    </section>
-    <section>
-      <article class="card">
-        <div id="panel-bot1" role="tabpanel" aria-labelledby="tab-bot1" hidden>
-          <div class="bot-desc"><strong>Buy strength.</strong> Stocks passing every A+ rule: both scanners 4/4, bullish market and sector, score ≥ 95, strong volume, beating sector and SPY, no bad news.</div>
-          <div id="bot1-results" class="bot-stats"></div>
-          <div class="card-body table-wrap">
-            <table><thead><tr><th>#</th><th>Stock</th><th>Why</th><th>Entry</th><th>Stop</th><th>Target</th><th>Shares</th><th>Flags</th><th></th></tr></thead><tbody id="bot1-table"><tr><td colspan="9" class="empty">Loading Bot 1 list…</td></tr></tbody></table>
-          </div>
+    <section id="panel-bot1" class="bot-panel" role="tabpanel" aria-labelledby="tab-bot1" style="--bot: var(--gold)" hidden>
+      <article class="card bot-area">
+        <div class="area-head"><div class="radar" aria-hidden="true"></div><div><h3>Bot 1 · A+ Hunter</h3><p><strong>Buy strength.</strong> Stocks passing every A+ rule: both scanners 4/4, bullish market and sector, score ≥ 95, strong volume, beating sector and SPY, no bad news.</p></div></div>
+        <div id="bot1-results" class="bot-stats"></div>
+        <div class="area-sub">
+          <div class="card-head"><h3>Best A+ opportunity</h3><span id="candidate-status" class="tag">NO TRADE</span></div>
+          <div id="candidate-panel" class="card-body"><div class="empty">No qualifying candidate in the latest scan.</div></div>
         </div>
-        <div id="panel-bot2" role="tabpanel" aria-labelledby="tab-bot2">
-          <div class="bot-desc"><strong>Buy the dip.</strong> S&amp;P 500 leaders (top 20% by 6-month return, in an uptrend) that fell more than 5% this week. Strongest leader first.</div>
-          <div id="bot2-results" class="bot-stats"></div>
-          <div class="card-body table-wrap">
-            <table><thead><tr><th>#</th><th>Stock</th><th>Why</th><th>Entry</th><th>Stop</th><th>Target</th><th>Shares</th><th>Flags</th><th></th></tr></thead><tbody id="bot2-table"><tr><td colspan="9" class="empty">Loading Bot 2 list…</td></tr></tbody></table>
-          </div>
-        </div>
-        <div id="panel-bot3" role="tabpanel" aria-labelledby="tab-bot3" hidden>
-          <div class="bot-desc"><strong>Ride the jump.</strong> S&amp;P 500 and the 200 most-traded US stocks that closed 5%+ higher on 3× normal volume, near the day's high, above the 200-day average. Biggest volume surge first. No target: a stop trails 3 ATR below the highest close. Higher risk; wins about 1 in 3 but can catch huge runs.</div>
-          <div id="bot3-results" class="bot-stats"></div>
-          <div class="card-body table-wrap">
-            <table><thead><tr><th>#</th><th>Stock</th><th>Why</th><th>Entry</th><th>Stop</th><th>Exit</th><th>Shares</th><th>Flags</th><th></th></tr></thead><tbody id="bot3-table"><tr><td colspan="9" class="empty">Loading Bot 3 list…</td></tr></tbody></table>
-          </div>
+        <div id="bot1-next" class="bot-next"></div>
+        <div class="card-body table-wrap">
+          <table><thead><tr><th>#</th><th>Stock</th><th>Why</th><th>Entry</th><th>Stop</th><th>Target</th><th>Shares</th><th>Flags</th><th></th></tr></thead><tbody id="bot1-table"><tr><td colspan="9" class="empty">Loading Bot 1 list…</td></tr></tbody></table>
         </div>
       </article>
     </section>
+    <section id="panel-bot2" class="bot-panel" role="tabpanel" aria-labelledby="tab-bot2" style="--bot: var(--violet)">
+      <article class="card bot-area">
+        <div class="area-head"><div class="radar" aria-hidden="true"></div><div><h3>Bot 2 · Dip Buyer</h3><p><strong>Buy the dip.</strong> S&amp;P 500 leaders (top 20% by 6-month return, in an uptrend) that fell more than 5% this week. Strongest leader first.</p></div></div>
+        <div id="bot2-results" class="bot-stats"></div>
+        <div id="bot2-next" class="bot-next"></div>
+        <div class="card-body table-wrap">
+          <table><thead><tr><th>#</th><th>Stock</th><th>Why</th><th>Entry</th><th>Stop</th><th>Target</th><th>Shares</th><th>Flags</th><th></th></tr></thead><tbody id="bot2-table"><tr><td colspan="9" class="empty">Loading Bot 2 list…</td></tr></tbody></table>
+        </div>
+      </article>
+    </section>
+    <section id="panel-bot3" class="bot-panel" role="tabpanel" aria-labelledby="tab-bot3" style="--bot: var(--rose)" hidden>
+      <article class="card bot-area">
+        <div class="area-head"><div class="radar" aria-hidden="true"></div><div><h3>Bot 3 · Momentum Rider</h3><p><strong>Ride the jump.</strong> S&amp;P 500 and the 200 most-traded US stocks that closed 5%+ higher on 3× normal volume, near the day's high, above the 200-day average. Biggest volume surge first. No target: a stop trails 3 ATR below the highest close. Higher risk; wins about 1 in 3 but can catch huge runs.</p></div></div>
+        <div id="bot3-results" class="bot-stats"></div>
+        <div id="bot3-next" class="bot-next"></div>
+        <div class="card-body table-wrap">
+          <table><thead><tr><th>#</th><th>Stock</th><th>Why</th><th>Entry</th><th>Stop</th><th>Exit</th><th>Shares</th><th>Flags</th><th></th></tr></thead><tbody id="bot3-table"><tr><td colspan="9" class="empty">Loading Bot 3 list…</td></tr></tbody></table>
+        </div>
+      </article>
+    </section>
+
 
     <!-- Market -->
     <div id="market" class="section-title">
@@ -912,32 +938,35 @@
       panel.append(top, checks);
     }
 
-    function renderSlotsList(slots) {
-      const openCount = Array.isArray(slots.open_positions) ? slots.open_positions.length : 0;
+    // Each bot's own "next pick" line inside its panel.
+    function renderNextPicks(slots, buying) {
       const status = slots.status || "UNAVAILABLE";
-      byId("slot-summary").textContent = `${number(openCount)} of ${number(slots.max_slots)} open`;
-      const list = byId("slots-list");
-      list.replaceChildren();
       const picks = slots.selections || [];
-      if (!picks.length) {
-        const state = el("div", "empty-state");
-        state.style.padding = "14px 6px";
-        state.append(el("strong", "", status === "ALL SLOTS FULL" ? "All slots are in use" : status === "STALE DATA" ? "Slot selection is stale" : "Nothing to buy today"),
-          el("div", "", status === "ALL SLOTS FULL"
-            ? "A new stock is picked when a trade closes."
-            : status === "STALE DATA" ? "Rerun the scan before relying on it." : "No A+ pick or leader pullback. Cash is a position too."));
-        list.appendChild(state);
+      // Live slot use from the journal, not the morning's slot file.
+      const { busy, slotsFull: mainFull, bot3Full } = buying;
+      for (const [bot, source] of [["bot1", "A_PLUS"], ["bot2", "PULLBACK"], ["bot3", "MOMENTUM"]]) {
+        const box = byId(`${bot}-next`);
+        box.replaceChildren(el("span", "label", "Next pick"));
+        // A pick already bought (or waiting to fill) is no longer next.
+        const pick = picks.find((stock) => stock.source === source && !busy.has(stock.ticker));
+        if (status === "STALE DATA") {
+          box.appendChild(el("span", "", "Slot selection is stale. Rerun the scan before relying on it."));
+        } else if (pick) {
+          const risk = pick.risk_preview || {};
+          const text = el("span");
+          text.append(el("strong", "", pick.ticker), document.createTextNode(` · ${risk.shares ?? "?"} shares near ${money(risk.entry_reference)} · bought automatically at the next run`));
+          box.append(avatar(pick.ticker, true), text);
+        } else if (source === "MOMENTUM" ? bot3Full : mainFull) {
+          box.appendChild(el("span", "", source === "MOMENTUM"
+            ? "Bot 3's slot is in use. It picks again when its trade closes."
+            : "Both Bot 1 / Bot 2 slots are in use. A new stock is picked when a trade closes."));
+        } else {
+          box.appendChild(el("span", "", source === "A_PLUS"
+            ? "No A+ stock today, so nothing to buy."
+            : source === "PULLBACK" ? "No leader pullback to buy today." : "No big volume jump to buy today."));
+        }
       }
-      for (const stock of picks) {
-        const risk = stock.risk_preview || {};
-        const line = el("div", "t-ticker");
-        line.style.padding = "10px 0";
-        const name = el("div", "", `${stock.ticker}`);
-        name.appendChild(el("small", "", `${strategyLabel(stock.source)} · ${risk.shares ?? "?"} shares near ${money(risk.entry_reference)}`));
-        line.append(avatar(stock.ticker, true), name);
-        list.appendChild(line);
-      }
-      for (const warning of slots.warnings || []) list.appendChild(el("div", "note error", warning));
+      for (const warning of slots.warnings || []) byId("bot2-next").after(el("div", "note error", warning));
     }
 
     async function buyStock(stock, button) {
@@ -1036,7 +1065,7 @@
         td(row, stock.source === "MOMENTUM" ? "Trailing 3 ATR" : money(risk.target), "num-dim");
         td(row, risk.shares);
         const flags = el("div", "tags");
-        if (stock.held) flags.appendChild(el("span", "tag held", "Held"));
+        if (stock.held || buying.busy.has(stock.ticker)) flags.appendChild(el("span", "tag held", "Held"));
         else if (stock.slot_pick) flags.appendChild(el("span", "tag pick", "Bot pick"));
         for (const warning of stock.warnings || []) {
           const flag = el("span", "tag warn", warning.label);
@@ -1403,7 +1432,20 @@
       try { localStorage.setItem("tradingbot-tab", bot); } catch (error) { /* storage blocked */ }
     }
     for (const tab of document.querySelectorAll(".tab")) tab.addEventListener("click", () => selectBot(tab.dataset.bot));
+    // Clicking a bot card at the top opens that bot's area.
+    function openBot(bot) {
+      selectBot(bot);
+      byId("bots").scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    for (const card of document.querySelectorAll(".bot-card[data-bot]")) {
+      card.addEventListener("click", () => openBot(card.dataset.bot));
+      card.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openBot(card.dataset.bot); }
+      });
+    }
     try { const saved = localStorage.getItem("tradingbot-tab"); if (["bot1", "bot2", "bot3"].includes(saved)) selectBot(saved); } catch (error) { /* storage blocked */ }
+    // A link like /#bot3 opens that bot's area.
+    if (["#bot1", "#bot2", "#bot3"].includes(location.hash)) selectBot(location.hash.slice(1));
 
     const hour = new Date().getHours();
     byId("greeting").textContent = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
@@ -1483,7 +1525,7 @@
         renderActivity(data, pending);
         maybeCelebrate(summary);
         renderCandidate(data);
-        renderSlotsList(data.slots || {});
+        renderNextPicks(data.slots || {}, buying);
         const bots = data.slots?.bots || {};
         const byStrategy = data.paper_trades?.by_strategy || {};
         const listStale = data.slots?.status === "STALE DATA";

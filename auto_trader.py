@@ -16,12 +16,17 @@ import time
 
 from broker import auto_trading_status, get_trading_client, latest_price
 from cash_parking import rebalance
+from paper_journal import get_pending_broker_orders
 from shadow_exits import fetch_daily_bars
 from project_paths import SLOT_SELECTION_JSON
 from slot_selector import load_fresh
 from trade_manager import SOURCE_AUTO, TradeError, open_trade, sync, update_trailing_stops
 
 FILL_WAIT_SECONDS = 10
+# Market buys usually fill in seconds but can take longer at the open
+# (REGN took 18 s on 2026-11-02). Keep syncing until every order filled,
+# so the stop / exit orders are placed by this run.
+FILL_WAIT_TRIES = 9
 
 
 def print_sync(result):
@@ -122,8 +127,13 @@ def buy_picks(client):
         )
 
     if placed:
-        time.sleep(FILL_WAIT_SECONDS)
-        print_sync(sync(client, latest_price))
+        for _ in range(FILL_WAIT_TRIES):
+            time.sleep(FILL_WAIT_SECONDS)
+            print_sync(sync(client, latest_price))
+            if not get_pending_broker_orders():
+                break
+        else:
+            print("Some orders have not filled yet; the next sync records them.")
 
 
 if __name__ == "__main__":
