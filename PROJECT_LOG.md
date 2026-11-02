@@ -227,6 +227,22 @@ time. The exact final one-trade-per-week strategy has **not** been backtested.
 
 ## 5. Activity Log (newest first)
 
+### 2026-11-01 — Dashboard responsive fixes
+
+**What:** Checked the dashboard at 390 px (phone), 768 px (tablet) and
+1024 px with headless Edge, and fixed: bot tabs wrapping onto three lines
+(now one line; on phones the short names "Bot 1 / Bot 2 / Bot 3" fill the
+width); Bot 3 card alone beside an empty gap on tablets (now full width);
+three trade slots squeezed into one row on phones (now they wrap, one per
+row on a phone).
+
+**Why:** The user asked whether the page is responsive.
+
+**How:** CSS in `web/dashboard.html` (`.tab` no-wrap, `.tab-extra` hidden
+under 640 px, Bot 3 card spanning the row under 1080 px, `.slots` using
+`auto-fit`), and the JS no longer forces three slot columns. Wide tables
+keep scrolling sideways inside their card.
+
 ### 2026-10-31 — Dashboard renamed to SultanQuant
 
 **What:** Top bar, browser tab and footer now read "SultanQuant" ("My own

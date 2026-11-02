@@ -128,7 +128,7 @@
     .regime-icon.on { background: rgba(34, 197, 139, .12); color: var(--good); }
     .regime-title { font-size: 20px; font-weight: 750; letter-spacing: -.02em; }
     .regime-text { margin-top: 3px; color: var(--text-2); font-size: 13px; line-height: 1.5; }
-    .slots { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .slots { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
     .slot { position: relative; padding: 14px; border-radius: 14px; border: 1px dashed var(--line-strong); min-height: 92px; display: flex; flex-direction: column; justify-content: space-between; }
     .slot.filled { border-style: solid; background: rgba(255,255,255,.035); }
     .slot.pending { border-color: rgba(56,189,248,.45); }
@@ -201,6 +201,9 @@
     .tab { display: inline-flex; align-items: center; gap: 8px; border: 0; border-radius: 10px; padding: 9px 14px; background: transparent; color: var(--text-2); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; transition: background .2s, color .2s; }
     .tab[aria-selected="true"] { background: rgba(255,255,255,.09); color: var(--text); box-shadow: 0 1px 0 rgba(255,255,255,.08) inset; }
     .tab .count { min-width: 22px; padding: 1px 7px; border-radius: 999px; background: rgba(255,255,255,.08); font-size: 11px; }
+    .tab { white-space: nowrap; flex: none; }
+    .tabs { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+    .section-title { flex-wrap: wrap; }
     .bot-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; padding: 16px 20px 0; }
     .bot-desc { padding: 14px 20px 0; color: var(--text-2); font-size: 13px; line-height: 1.5; }
 
@@ -356,11 +359,17 @@
 
     @media (max-width: 1080px) {
       .bots-row { grid-template-columns: 1fr 1fr; }
+      /* Bot 3 alone on the second row takes the full width, no gap. */
+      .bots-row > .bot-card:nth-child(3) { grid-column: 1 / -1; }
       .feed-card .feed { grid-template-columns: 1fr; max-height: 262px; }
     }
     @media (max-width: 640px) {
       .bots-row { grid-template-columns: 1fr; }
       .clock { display: none; }
+      /* Short tab names ("Bot 1") across the full width on phones. */
+      .tabs { width: 100%; }
+      .tab { flex: 1; justify-content: center; padding: 9px 6px; }
+      .tab-extra { display: none; }
     }
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after { animation: none !important; transition: none !important; }
@@ -477,9 +486,9 @@
     <div id="bots" class="section-title">
       <div><h2>Today's stock lists</h2><p>Every stock each bot would buy. The bots buy the top picks themselves; Buy lets you pick by hand.</p></div>
       <div class="tabs" role="tablist" aria-label="Bot lists">
-        <button class="tab" role="tab" id="tab-bot1" aria-controls="panel-bot1" aria-selected="false" data-bot="bot1"><span class="chip-dot" style="background:var(--gold)"></span>Bot 1 · A+<span id="bot1-count" class="count">0</span></button>
-        <button class="tab" role="tab" id="tab-bot2" aria-controls="panel-bot2" aria-selected="true" data-bot="bot2"><span class="chip-dot" style="background:var(--violet)"></span>Bot 2 · Pullback<span id="bot2-count" class="count">0</span></button>
-        <button class="tab" role="tab" id="tab-bot3" aria-controls="panel-bot3" aria-selected="false" data-bot="bot3"><span class="chip-dot" style="background:var(--rose)"></span>Bot 3 · Momentum<span id="bot3-count" class="count">0</span></button>
+        <button class="tab" role="tab" id="tab-bot1" aria-controls="panel-bot1" aria-selected="false" data-bot="bot1"><span class="chip-dot" style="background:var(--gold)"></span>Bot 1<span class="tab-extra"> · A+</span><span id="bot1-count" class="count">0</span></button>
+        <button class="tab" role="tab" id="tab-bot2" aria-controls="panel-bot2" aria-selected="true" data-bot="bot2"><span class="chip-dot" style="background:var(--violet)"></span>Bot 2<span class="tab-extra"> · Pullback</span><span id="bot2-count" class="count">0</span></button>
+        <button class="tab" role="tab" id="tab-bot3" aria-controls="panel-bot3" aria-selected="false" data-bot="bot3"><span class="chip-dot" style="background:var(--rose)"></span>Bot 3<span class="tab-extra"> · Momentum</span><span id="bot3-count" class="count">0</span></button>
       </div>
     </div>
     <section class="grid-2">
@@ -716,7 +725,6 @@
         ...Array.from({ length: Math.max(momentumSlots, bot3.length) }, (_, i) => [bot3[i], `Slot ${maxSlots + i + 1} · Bot 3`, true]),
       ];
       byId("slot-count").textContent = `${items.length} of ${maxSlots + momentumSlots} in use`;
-      wrap.style.gridTemplateColumns = `repeat(${Math.min(groups.length, 3)}, minmax(0, 1fr))`;
       for (const [item, name, isBot3] of groups) {
         const slot = el("div", `slot${item ? (item.kind === "pending" ? " filled pending" : " filled") : ""}`);
         if (isBot3) slot.style.borderColor = "rgba(244,114,182,.45)";
