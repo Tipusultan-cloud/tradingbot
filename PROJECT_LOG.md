@@ -320,6 +320,28 @@ time. The exact final one-trade-per-week strategy has **not** been backtested.
 
 ## 5. Activity Log (newest first)
 
+### 2026-11-03 — Missed morning buy; MPC kept through earnings
+
+**What:** The 8:45 AM Morning Buy did not run on time: both tasks started
+at 9:10 AM (the PC was not awake / logged in at 8:45; `StartWhenAvailable`
+ran them late) and both ended at once with `0xC000013A` (their console
+window was closed). So the earnings exit did not sell MPC. MPC had reported
+before the open (earnings 2026-11-03) and was at $419.25 (bought $444.58,
+stop $415.84). The user chose to **keep MPC** and let the stop decide,
+since the earnings gap had already happened. Ran `auto_trader.py --sync`
+by hand (nothing to record; REGN's stop stays $907.69).
+
+**Fix:** `install_daily_task.ps1` now registers the tasks with
+`-WakeToRun` (a sleeping PC wakes for the run) and a hidden window
+(`-WindowStyle Hidden`, nothing to close by accident). Morning Buy
+re-registered with both. The Daily Scan task is set to 6:00 PM local time
+without a repeat (fixed by hand in Task Scheduler), but updating it from
+the script is still refused ("Access is denied"); run `Install Daily Scan
+Task.bat` as administrator to give it the same fix.
+
+**Why:** A missed morning run skips buys, the earnings exit and the Bot 3
+trailing stop update.
+
 ### 2026-11-03 — Weekly report card
 
 **What:** New `report_card.py`: for each bot, from the closed paper

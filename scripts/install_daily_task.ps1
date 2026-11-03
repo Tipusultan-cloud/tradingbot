@@ -6,8 +6,12 @@ $ErrorActionPreference = "Stop"
 #   8:45 AM  TradingBot Morning Buy  buys the picks 15 minutes after the open
 $ProjectDir = Split-Path -Parent $PSScriptRoot
 
+# WakeToRun: a sleeping PC wakes up for the run (on 2026-11-03 the 8:45
+# buy started late at 9:10). Hidden window: closing a visible task window
+# stopped both runs that day.
 $Settings = New-ScheduledTaskSettingsSet `
     -StartWhenAvailable `
+    -WakeToRun `
     -MultipleInstances IgnoreNew `
     -ExecutionTimeLimit (New-TimeSpan -Hours 3)
 
@@ -39,7 +43,7 @@ foreach ($Task in $Tasks) {
 
     $Action = New-ScheduledTaskAction `
         -Execute "powershell.exe" `
-        -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$Script`"" `
+        -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$Script`"" `
         -WorkingDirectory $ProjectDir
 
     $Trigger = New-ScheduledTaskTrigger `
