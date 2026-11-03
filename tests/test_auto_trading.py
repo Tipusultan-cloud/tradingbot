@@ -191,6 +191,20 @@ class OpenTradeTests(JournalCase):
             self.buy({"ticker": "DEF", "atr": 1.0})
 
 
+class OpenGapTests(JournalCase):
+    def test_auto_buy_is_skipped_when_the_price_ran_away(self):
+        stock = {**STOCK, "price": 100.0}
+        with self.assertRaisesRegex(TradeError, "planned entry is gone"):
+            self.buy(stock, price=101.01)  # 0.5 ATR = 1.00 above the scan
+        self.assertEqual(self.client.submitted, [])
+
+    def test_small_gap_and_manual_buys_still_go_through(self):
+        stock = {**STOCK, "price": 100.0}
+        self.buy(stock, price=100.9)
+        self.buy({**stock, "ticker": "DEF"}, source="MANUAL", price=105.0)
+        self.assertEqual(len(self.client.submitted), 2)
+
+
 class SyncTests(JournalCase):
     def test_filled_entry_becomes_open_trade(self):
         self.buy(source="MANUAL")
@@ -201,9 +215,11 @@ class SyncTests(JournalCase):
         trade = result["filled"][0]
         self.assertEqual(trade["entry_price"], 100.4)
         self.assertEqual(trade["shares"], 33)
+        # Stop and targets move with the real fill: 1.5 ATR = 3.0 below
+        # 100.40, targets 2R / 2.5R above it.
         self.assertEqual(
             (trade["stop_price"], trade["target_price"], trade["target2_price"]),
-            (97.0, 106.0, 107.5),
+            (97.4, 106.4, 107.9),
         )
         self.assertEqual(trade["entry_source"], "MANUAL")
         self.assertEqual(trade["broker_order_id"], "order-1")
@@ -220,9 +236,9 @@ class SyncTests(JournalCase):
             self.assertEqual(request["side"].value, "sell")
             self.assertEqual(request["order_class"].value, "oco")
             self.assertEqual(request["time_in_force"].value, "gtc")
-            self.assertEqual(request["stop_loss"], {"stop_price": 97.0})
-        self.assertEqual((half["qty"], half["take_profit"]), (16, {"limit_price": 106.0}))
-        self.assertEqual((rest["qty"], rest["take_profit"]), (17, {"limit_price": 107.5}))
+            self.assertEqual(request["stop_loss"], {"stop_price": 97.4})
+        self.assertEqual((half["qty"], half["take_profit"]), (16, {"limit_price": 106.4}))
+        self.assertEqual((rest["qty"], rest["take_profit"]), (17, {"limit_price": 107.9}))
         trade = get_paper_trades(database_path=self.database)["open"][0]
         self.assertEqual(
             (trade["half_order_id"], trade["rest_order_id"]), ("order-2", "order-3")

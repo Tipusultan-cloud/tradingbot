@@ -4,8 +4,9 @@
   python auto_trader.py          sync, buy the slot picks, sync again,
                                  then park idle cash in SPY (cash_parking.py)
 
-Runs in the daily scan: --sync before slot_selector.py (so closed trades
-free their slots), then the full run after it. Does nothing unless
+--sync runs in the evening scan before slot_selector.py (so closed trades
+free their slots); the full run is the 8:45 AM Central morning buy
+(scripts/scheduled_morning_buy.ps1), 15 minutes after the open. Does nothing unless
 AUTO_TRADING=true with Alpaca paper keys in .env (see broker.py), and
 only sends orders while the market is open. Hand-picked trades come
 from the dashboard Buy button.

@@ -290,15 +290,20 @@ gain is small. Selling everything at 3R was worse (+37%). Trades opened before
 **Automatic trading on Alpaca paper (optional):** with `AUTO_TRADING=true`,
 `ALPACA_PAPER=true` and free Alpaca paper API keys in `.env`:
 
-- `auto_trader.py` buys the bots' slot picks after each scan, only while the
-  market is open.
+- `auto_trader.py` buys the bots' slot picks at 8:45 AM Central (the
+  morning after the evening scan), only while the market is open. A pick is
+  skipped when its price is more than `MAX_GAP_ATR` (default 0.5) ATR above
+  the scan price: the stock already ran and the planned entry is gone.
+  Dashboard **Buy** clicks are not checked.
 - Each **Buy** button in the dashboard's Bot 1 / Bot 2 lists buys that stock
   (cherry-picking), as long as a slot is free.
 - Every buy is a market buy. Once it fills, two Alpaca **OCO** sell orders
-  (a limit target plus a real stop-loss 1.5 × ATR below the price when
-  sent, kept until one fills) are placed: half the shares at the 2R target,
+  (a limit target plus a real stop-loss 1.5 × ATR below the **fill price**,
+  kept until one fills) are placed: half the shares at the 2R target,
   the rest at 2.5R (`SECOND_REWARD_RISK_RATIO`). Shares risk 1% of
-  `PAPER_ACCOUNT_BALANCE`. A 1-share trade sells at 2.5R.
+  `PAPER_ACCOUNT_BALANCE`. A 1-share trade sells at 2.5R. The stop and
+  targets are set from the real fill, so a fill above the planned price
+  still risks 1% and the targets stay a true 2R / 2.5R (Bot 3's stop too).
 - When the 2R half fills, the stop of the rest is moved up to the entry
   price, so the rest cannot turn into a loss. This happens on the next sync
   (scan or dashboard refresh), not instantly.
@@ -463,8 +468,8 @@ with recorded entries and exits. Use **Download all trades (CSV)** to get the
 complete journal in Excel-friendly format. SQLite remains the source of truth;
 the generated CSV is ignored by Git.
 
-The weekday scan is scheduled for 8:30 AM in the computer's local time zone
-(see [Automatic Daily Scan](#automatic-daily-scan)). For daily email
+The weekday scan is scheduled for 6:00 PM and the buy run for 8:45 AM in the
+computer's local time zone (see [Automatic Daily Scan](#automatic-daily-scan)). For daily email
 summaries, configure SMTP settings in `.env`; without them the scanner still
 runs and logs that email was skipped.
 
@@ -542,9 +547,21 @@ implemented.
 
 ## Automatic Daily Scan
 
-Windows Task Scheduler runs the pipeline Monday-Friday at 8:30 AM in the
-computer's local time zone. The task runs only while your Windows user is
-signed in. Install or refresh the task with `Install Daily Scan Task.bat` or:
+Windows Task Scheduler runs two tasks Monday-Friday in the computer's local
+time zone (set for Central time: the market opens 8:30 AM, closes 3:00 PM):
+
+- **TradingBot Daily Scan, 6:00 PM**: the full scan on the day's final bars;
+  it builds the next morning's picks.
+- **TradingBot Morning Buy, 8:45 AM**: `auto_trader.py` buys those picks 15
+  minutes after the open (skipping the wildest prices), raises Bot 3 trailing
+  stops and parks idle cash in SPY.
+
+Scan results count as current when they were made after the previous
+weekday's 3:00 PM Central close (`market_clock.py`), so Friday evening's picks
+are bought on Monday morning, and a missed evening scan shows as stale.
+
+The tasks run only while your Windows user is signed in. Install or refresh
+them with `Install Daily Scan Task.bat` or:
 
 ```powershell
 .\scripts\install_daily_task.ps1
@@ -556,7 +573,8 @@ administrator permission to update its existing definition.
 The scheduled scan implementation is:
 
 ```text
-scripts/scheduled_daily_scan.ps1
+scripts/scheduled_daily_scan.ps1   (evening scan)
+scripts/scheduled_morning_buy.ps1  (morning buy)
 ```
 
 The root-level `scheduled_daily_scan.ps1` remains as a compatibility wrapper
@@ -574,8 +592,10 @@ Execution order:
 7. scanner_pullback.py (a failure only warns)
 8. scanner_momentum.py (Bot 3; downloads every US stock, several minutes; a failure only warns)
 9. slot_selector.py (a failure only warns)
-10. auto_trader.py (buys slot picks and parks idle cash in SPY if AUTO_TRADING=true; a failure only warns)
-11. shadow_exits.py (a failure only warns)
+10. shadow_exits.py (a failure only warns)
+
+Next morning, 8:45 AM: auto_trader.py (buys the slot picks and parks idle
+cash in SPY if AUTO_TRADING=true)
 ```
 
 Run logs are stored in `logs/`.

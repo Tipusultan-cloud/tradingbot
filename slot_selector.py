@@ -27,6 +27,7 @@ from earnings_calendar import check_earnings
 from master_selector import build_risk_preview, parse_timestamp
 from news_checker import check_news
 from paper_journal import get_paper_trades, get_pending_broker_orders
+from market_clock import is_current, stale_message
 from project_paths import (
     MASTER_CANDIDATES_JSON,
     MOMENTUM_SETUPS_JSON,
@@ -36,7 +37,6 @@ from project_paths import (
 
 DEFAULT_MAX_OPEN_TRADES = 2
 DEFAULT_MOMENTUM_SLOTS = 1
-MAX_SOURCE_AGE_HOURS = 36
 
 SOURCE_A_PLUS = "A_PLUS"
 SOURCE_PULLBACK = "PULLBACK"
@@ -128,9 +128,8 @@ def load_fresh(path, label, warnings, now=None):
         warnings.append(f"{label} results have no valid generated_at.")
         return None
 
-    age = ((now or datetime.now(timezone.utc)) - generated).total_seconds() / 3600
-    if age > MAX_SOURCE_AGE_HOURS:
-        warnings.append(f"{label} results are stale: {age:.1f} hours old.")
+    if not is_current(generated, now):
+        warnings.append(stale_message(label, generated, now) + ".")
         return None
     return payload
 

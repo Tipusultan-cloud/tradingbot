@@ -10,6 +10,12 @@ with a stop at price - 1.5 ATR. Once the buy fills, two OCO sell orders
 When the 2R half fills, the stop of the rest moves up to the entry price.
 The 2-slot limit counts open trades and orders not yet filled.
 
+The stop and targets are worked out again from the real fill price (same
+1.5 ATR distance), so a fill above the planned price still risks 1% and
+the targets stay a true 2R / 2.5R. An automatic buy is skipped when the
+price is more than MAX_GAP_ATR (default 0.5) ATR above the scan price:
+the stock already ran and the planned entry is gone.
+
 sync() brings the journal up to date with Alpaca:
   - a filled entry order becomes an open journal trade (fill price) and
     gets its two exit orders (retried on the next sync if that fails)
@@ -87,23 +93,36 @@ def risk_settings():
     }
 
 
-def plan_order(price, atr, settings):
-    """Shares, stop and the two targets for a buy at `price`."""
+def max_gap_atr():
+    return float(os.getenv("MAX_GAP_ATR", "0.5"))
+
+
+def exit_levels(price, atr, settings):
+    """Stop and the two targets for an entry at `price`."""
     if price <= 0 or atr <= 0:
         raise TradeError("Price and ATR must be greater than 0.")
     stop_distance = atr * settings["atr_multiplier"]
     stop = round(price - stop_distance, 2)
     if stop <= 0:
         raise TradeError("Calculated stop is not above $0.")
-    target = round(price + stop_distance * settings["reward_risk"], 2)
-    target2 = round(price + stop_distance * settings["second_reward_risk"], 2)
+    return {
+        "stop": stop,
+        "target": round(price + stop_distance * settings["reward_risk"], 2),
+        "target2": round(price + stop_distance * settings["second_reward_risk"], 2),
+    }
+
+
+def plan_order(price, atr, settings):
+    """Shares, stop and the two targets for a buy at `price`."""
+    levels = exit_levels(price, atr, settings)
+    stop_distance = atr * settings["atr_multiplier"]
     shares = min(
         math.floor(settings["account"] * settings["risk_pct"] / 100 / stop_distance),
         math.floor(settings["account"] / price),
     )
     if shares < 1:
         raise TradeError("Position size is below 1 share.")
-    return {"shares": shares, "stop": stop, "target": target, "target2": target2}
+    return {"shares": shares, **levels}
 
 
 def busy_tickers(database_path=None):
@@ -154,6 +173,15 @@ def open_trade(client, stock, strategy, entry_source, price_lookup, database_pat
 
     atr = float(stock.get("atr") or 0)
     price = float(price_lookup(ticker))
+    planned = float(stock.get("price") or 0)
+    if entry_source == SOURCE_AUTO and planned > 0 and atr > 0:
+        gap = price - planned
+        if gap > max_gap_atr() * atr:
+            raise TradeError(
+                f"price ${price:.2f} is ${gap:.2f} above the scan price "
+                f"${planned:.2f} (more than {max_gap_atr():g} ATR); the "
+                "planned entry is gone."
+            )
     plan = plan_order(price, atr, risk_settings())
     if strategy == SOURCE_MOMENTUM:
         # Rides with a trailing stop; the 2R target is only for reference.
@@ -371,20 +399,37 @@ def sync(client, price_lookup, database_path=None, today=None, delay=1.0):
             continue
         status = _value(order.status)
         if status == "filled":
+            fill = float(order.filled_avg_price)
+            stop, target, target2 = (
+                pending["stop_price"], pending["target_price"],
+                pending["target2_price"],
+            )
+            # Split-exit and Bot 3 trades get their sell orders after the
+            # fill, so set them from the real price (old brackets already
+            # hold theirs at Alpaca).
+            if target2 is not None or pending["strategy"] == SOURCE_MOMENTUM:
+                try:
+                    levels = exit_levels(fill, float(pending["atr"]), risk_settings())
+                except (TradeError, TypeError, ValueError):
+                    levels = None
+                if levels:
+                    stop, target = levels["stop"], levels["target"]
+                    if target2 is not None:
+                        target2 = levels["target2"]
             trade = record_entry(
                 pending["ticker"],
-                float(order.filled_avg_price),
+                fill,
                 pending["atr"],
                 int(float(order.filled_qty)),
-                pending["stop_price"],
-                pending["target_price"],
+                stop,
+                target,
                 setup_score=pending["setup_score"],
                 entry_time=_iso(order.filled_at),
                 database_path=database_path,
                 strategy=pending["strategy"],
                 entry_source=pending["entry_source"],
                 broker_order_id=pending["order_id"],
-                target2_price=pending["target2_price"],
+                target2_price=target2,
             )
             finish_broker_order(
                 pending["order_id"], "FILLED", trade_id=trade["id"],

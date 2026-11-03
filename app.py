@@ -32,6 +32,7 @@ from paper_journal import (
     record_exit,
 )
 from shadow_exits import get_shadow_comparison
+from market_clock import is_current, stale_message
 from slot_selector import SOURCE_A_PLUS, SOURCE_MOMENTUM, SOURCE_PULLBACK, max_open_trades
 from broker import (
     auto_trading_status,
@@ -111,12 +112,6 @@ REWARD_RISK_RATIO = float(
 )
 
 
-SCANNER_MAX_AGE_HOURS = float(
-    os.getenv(
-        "SCANNER_MAX_AGE_HOURS",
-        "36"
-    )
-)
 
 
 MAX_OPEN_TRADES = max_open_trades()
@@ -247,8 +242,8 @@ def _timestamp_error(generated_at, label):
 
     if age_hours < -0.05:
         return f"{label} results are dated in the future"
-    if age_hours > SCANNER_MAX_AGE_HOURS:
-        return f"{label} results are stale: {age_hours:.1f} hours old"
+    if not is_current(scan_time):
+        return stale_message(label, scan_time)
 
     return None
 

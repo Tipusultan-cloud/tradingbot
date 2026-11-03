@@ -1,3 +1,5 @@
+# Evening scan (6:00 PM Central, after the close): builds tomorrow's picks
+# from the day's final bars. Buying is scheduled_morning_buy.ps1.
 $ErrorActionPreference = "Stop"
 
 $ProjectDir = Split-Path -Parent $PSScriptRoot
@@ -27,7 +29,7 @@ try {
 
     Write-Host ""
     Write-Host "================================"
-    Write-Host "TRADINGBOT AUTOMATIC DAILY SCAN"
+    Write-Host "TRADINGBOT EVENING SCAN (after the close)"
     Write-Host "================================"
     Write-Host "Started: $(Get-Date)"
     Write-Host ""
@@ -81,11 +83,8 @@ try {
         Write-Warning "Slot selection failed; pullback BUY alerts will be rejected."
     }
 
-    # Buys the slot picks on Alpaca paper when AUTO_TRADING=true.
-    & $Python ".\auto_trader.py"
-    if ($LASTEXITCODE -ne 0) {
-        Write-Warning "Auto trader failed; no automatic orders were sent this run."
-    }
+    # The picks are bought by scheduled_morning_buy.ps1 at 8:45 AM Central,
+    # 15 minutes after the next open.
 
     Write-Host ""
     Write-Host "Updating shadow exit comparison for paper trades..."

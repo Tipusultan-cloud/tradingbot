@@ -11,26 +11,35 @@ top of the **Activity Log**. **Current State** is kept up to date as a snapshot.
 
 ## 1. The goal of the project
 
-**What:** A swing-trading *decision-support* machine. Every weekday it scans
-the market and either picks ONE high-quality "A+" stock setup or says
-**NO TRADE / WAIT**.
+**What:** A swing-trading machine, branded **SultanQuant**, that trades an
+**Alpaca paper account** (fake money, real orders). Three bots look for
+different kinds of trades every weekday; each picks only a few stocks and
+says **NO TRADE / WAIT** when nothing qualifies.
 
-**Why:** To trade less but better — only take trades when the overall market,
-the stock's sector, and the stock itself all point up at the same time, with
-fixed, small risk per trade. A bot that refuses to trade in weak markets is
-safer than one that always finds something.
+**Why:** To trade less but better, with a fixed, small risk per trade, and
+to prove the rules forward on paper before any real money. A bot that
+refuses to trade in weak markets is safer than one that always finds
+something.
 
-**How (in one line):** Download prices (yfinance) → build a 200-stock list →
-run two independent scanners → a strict master selector must approve →
-TradingView alerts are only accepted for the approved stock → trades are
-recorded as **paper trades** (no real money, no broker orders).
+**How (in one line):** Download prices (yfinance) every weekday evening →
+three bots scan → a slot selector picks what to buy → the next morning
+`auto_trader.py` buys on Alpaca paper with a real stop and targets → the
+journal and dashboard track every trade.
+
+The three bots:
+
+| Bot | Name | Buys | Exit |
+| --- | --- | --- | --- |
+| Bot 1 | A+ Hunter | strength: stocks passing every strict A+ rule (2.2–2.4) | half at 2R, rest at 2.5R, 20 days |
+| Bot 2 | Dip Buyer | S&P 500 leaders after a >5% pullback (2.5) | half at 2R, rest at 2.5R, 20 days |
+| Bot 3 | Momentum Rider | big jumps on huge volume (2.6) | trailing stop, no target, no time limit |
 
 ---
 
 ## 2. What was built — what, why, how
 
 ### 2.1 Daily universe builder — `universe_builder.py`
-- **What:** Creates the list of 200 stocks to watch each day →
+- **What:** Creates the list of 200 stocks for Bot 1 each day →
   `data/top_200_universe.json` / `.csv`.
 - **Why:** Scanning all ~500 S&P stocks is slow and noisy. Focusing on the
   strongest, most liquid stocks in the strongest sectors raises the quality of
@@ -44,9 +53,10 @@ recorded as **paper trades** (no real money, no broker orders).
   4. Takes a large share from the top 2 sectors and fills the rest from the
      other sectors (e.g. on 2026-10-21: 81 from Energy + Health Care, 119 from
      the rest = 200).
-  5. Drops today's incomplete daily bar so half-finished data is never used.
+  5. Uses only completed daily bars: before 4:15 PM New York today's bar is
+     dropped; the 6:00 PM Central scan gets the day's final bar.
 
-### 2.2 Original scanner — `scanner.py`
+### 2.2 Bot 1, original scanner — `scanner.py`
 - **What:** Checks each of the 200 stocks for a valid entry →
   `data/qualified_setups.json`.
 - **Why:** To find stocks at a specific, historically tested entry point —
@@ -65,7 +75,7 @@ recorded as **paper trades** (no real money, no broker orders).
     Minimum to qualify: **95**.
   - "4/4" = trend, pattern, momentum (RSI), and volume checks all pass.
 
-### 2.3 Top-down scanner — `scanner_topdown.py`
+### 2.3 Bot 1, top-down scanner — `scanner_topdown.py`
 - **What:** A second, independent scan that goes **SPY → Sector → Stock** →
   `data/qualified_setups_topdown.json`.
 - **Why:** A second opinion. A stock is only trusted if both scanners agree,
@@ -74,8 +84,8 @@ recorded as **paper trades** (no real money, no broker orders).
   bullish, then the stock's sector ETF bullish, then checks the stock and its
   relative strength vs both the sector and SPY.
 
-### 2.4 Master selector — `master_selector.py`
-- **What:** Makes the final decision → `data/master_candidates.json` and
+### 2.4 Bot 1, master selector — `master_selector.py`
+- **What:** Makes the A+ decision → `data/master_candidates.json` and
   `data/best_current_candidate.json` (status `SELECTED`, `WAIT`, or NO TRADE).
 - **Why:** One clear answer per day instead of a long list; strict rules
   protect the account.
@@ -86,60 +96,132 @@ recorded as **paper trades** (no real money, no broker orders).
     sector beats SPY, stock beats SPY, **no bad news in the last 3 trading
     days** (`news_checker.py`). Earnings within 5 trading days
     shows a warning only (2026-10-21, `earnings_calendar.py`).
-  - Builds a risk preview for the winner (see 2.7) and lists up to 5 alternates.
+  - Builds a risk preview for the winner (see 2.10) and lists up to 5 alternates.
   - `weekly_lock` is currently `false` → the pick can change day to day.
+  - When SPY is not bullish, Bot 1 waits; Bots 2 and 3 still run.
 
-### 2.5 Webhook API — `app.py` (port 8000)
+### 2.5 Bot 2, leader pullback — `scanner_pullback.py`
+- **What:** Strong stocks that just dipped → `data/pullback_setups.json`.
+- **Why:** Bot 1 rarely finds a trade (its rules are strict on purpose);
+  buying a strong leader on a dip was the best extra rule in the backtests
+  (`backtests/backtest_pullback_slots.py`, 2026-10-28).
+- **How:** S&P 500 stocks in the top 20% by 6-month return, in an uptrend
+  (Close > SMA200 and EMA20 > EMA50), that closed more than 5% lower than 5
+  sessions ago. Strongest leader first, up to 20 saved. Earnings and news
+  are warnings only. Tested and **rejected** (2026-11-01): an "SPY above its
+  200-day average" filter and adding 200 more US stocks; both did worse.
+
+### 2.6 Bot 3, momentum rider — `scanner_momentum.py`
+- **What:** Big jumps on huge volume → `data/momentum_setups.json`.
+- **Why:** To catch the rare stocks that keep running for weeks; higher
+  risk (wins about 1 in 3) but a few trades make huge gains.
+- **How:** Universe = S&P 500 plus the 200 most-traded other US stocks
+  (`us_market_universe.py`). A stock qualifies when it closed **≥ 5% up** on
+  **≥ 3× its 20-day average volume**, in the top 25% of the day's range, above
+  its SMA200. Biggest volume surge first. Takes several minutes (~700
+  stocks). Backtest: about 4.2% a year, best trade 33.6R, worst drop 15%.
+  First live trade: REGN, 2026-11-02.
+
+### 2.7 Slot selector — `slot_selector.py`
+- **What:** Decides what to buy → `data/slot_selection.json`, plus the full
+  list of each bot for the dashboard.
+- **Why:** Limits how many trades are open at once, so risk stays small.
+- **How:** Bot 1 and Bot 2 share `MAX_OPEN_TRADES` (2) slots, A+ pick first,
+  then leader pullbacks. Bot 3 has its own `MOMENTUM_SLOTS` (1). Open trades
+  and orders waiting to fill hold a slot. Every listed stock gets warnings
+  (earnings within 2 weeks, bad news or bad earnings, fell after earnings).
+  Scan files count only when made after the previous weekday's 3:00 PM
+  Central close (`market_clock.py`).
+
+### 2.8 Alpaca paper trading — `trade_manager.py`, `auto_trader.py`, `broker.py`
+- **What:** Real orders on the Alpaca **paper** account (fake money). Only
+  with `AUTO_TRADING=true` and `ALPACA_PAPER=true`; a live account is refused.
+- **Why:** Real fills, real stops and real slippage are a far better test
+  than a journal alone.
+- **How:**
+  - At 8:45 AM Central `auto_trader.py` buys the slot picks with market
+    orders. A pick is skipped when the price is more than 0.5 ATR above the
+    scan price (`MAX_GAP_ATR`; the planned entry is gone).
+  - Once a buy fills, the stop and targets are set from the **real fill
+    price**. Bot 1 / Bot 2: two OCO sell orders at Alpaca (good till
+    canceled): half the shares at 2R, the rest at 2.5R, each with a stop
+    1.5 ATR below the fill. When the half sells, the stop of the rest moves
+    to the entry price. A trade held 20 sessions is sold at market.
+  - Bot 3: one stop order 1.5 ATR below the fill, raised each morning to 3
+    ATR below the highest close (never lowered). No target, no time limit.
+  - The run keeps checking (up to 90 s) until every buy has filled, so the
+    stops are placed in the same run.
+  - Trades from before 2026-10-31 (MPC, FTNT) keep one bracket order: stop
+    plus a single 2R target.
+  - **SPY cash parking** (`cash_parking.py`): after the buys, half
+    (`SPY_PARK_FRACTION` 0.5) of the bot's idle cash is kept in SPY.
+
+### 2.9 Webhook API — `app.py` (port 8000)
 - **What:** Receives TradingView BUY/SELL alerts over the internet via ngrok.
 - **Why:** TradingView watches the chart in real time; the bot double-checks
   the alert before anything is recorded.
 - **How:** Each alert goes through: secret check (`TV_WEBHOOK_SECRET` in
   `.env`) → ticker/action/price validation → duplicate protection (same signal
   within 60 s is rejected) → BUY only if the ticker is in **fresh** scanner
-  output **and** is the current master pick (missing/stale data = reject) →
+  output **and** is the current pick (missing/stale data = reject) →
   risk calculation → paper-journal entry. SELL closes the paper position.
+  While auto trading is on, TradingView alerts are ignored, so the journal
+  always matches the Alpaca account.
 
-### 2.6 Dashboard — `app.py` `dashboard_app` + `web/` (port 8001)
-- **What:** Read-only local web page at `http://127.0.0.1:8001`.
-- **Why:** See market regime, latest pick, pipeline timestamps, and paper
-  trades at a glance without opening JSON files.
-- **How:** Reads the `data/` files, refreshes every 30 s, warns on
-  missing/invalid/stale files. Bound to 127.0.0.1 only and **never** forwarded
-  through ngrok because it has no login.
-
-### 2.7 Risk management
-- **What:** Position size, stop, and target for every candidate.
+### 2.10 Risk management
+- **What:** Position size, stop, and targets for every trade.
 - **Why:** Small, fixed losses keep the account alive through losing streaks.
-- **How:** $10,000 reference account · risk 1% ($100) per trade ·
-  stop = entry − 1.5 × ATR · target = 2R (twice the risk) · shares =
-  $100 ÷ stop distance · max hold 20 trading days.
+- **How:** $10,000 reference account (`PAPER_ACCOUNT_BALANCE`) · risk 1%
+  ($100) per trade (kept at 1% on purpose, 2026-10-31) · stop = fill −
+  1.5 × ATR · shares = $100 ÷ stop distance · Bot 1 / Bot 2: half at 2R,
+  rest at 2.5R, max 20 sessions · Bot 3: trailing stop 3 ATR, no target.
+  The 10-year backtest of the split exit: +54.3% vs +49.7% for all at 2R.
 
-### 2.8 Paper journal — `paper_journal.py`
-- **What:** Records simulated trades in `data/paper_trades.sqlite3`, mirrored
+### 2.11 Paper journal — `paper_journal.py`, `paper_exits.py`, `shadow_exits.py`
+- **What:** Records every trade in `data/paper_trades.sqlite3`, mirrored
   to `data/paper_trades.csv` (Excel-friendly; dashboard download button).
 - **Why:** Prove the strategy forward in real time before any real money.
-- **How:** Confirmed BUY → open position; SELL → close it and store realized
-  P&L. Blocks a second open trade in the same ticker and duplicate signals.
-  Since 2026-10-28 the daily scan closes paper trades at stop, 2R target or
-  20 days (`paper_exits.py`); since 2026-10-31 it sells half at 2R (stop of
-  the rest moves to entry) and the rest at 2.5R. Alpaca paper trades use
-  real orders for the same rule (`trade_manager.py`).
+- **How:** Alpaca fills and exits are copied in by `auto_trader.py --sync`
+  and dashboard refreshes (`entry_source` `AUTO` or `MANUAL`), including
+  the half sold at 2R (`PARTIAL+TARGET`, `PARTIAL+STOP`, …). Journal-only
+  trades are closed by the daily scan with the same rules (`paper_exits.py`).
+  `shadow_exits.py` replays other exit rules on the same trades so they can
+  be compared (Bot 1 / Bot 2 trades only).
 
-### 2.9 Automation and scripts — `scripts/`, `.bat` files
-- **What:** One-click start, scheduled daily scan, backups, optional email.
-- **Why:** The scan must run every day without remembering to start it.
+### 2.12 Dashboard — `app.py` `dashboard_app` + `web/dashboard.html` (port 8001)
+- **What:** The SultanQuant page at `http://127.0.0.1:8001` (gold crown logo,
+  Central and New York clocks).
+- **Why:** See everything at a glance and pick trades by hand.
+- **How:** Refreshes every 30 s and warns on missing/invalid/stale files.
+  Shows open profit, SPY parking, the scan funnel, the three bots (each tab
+  shows only that bot's area and next pick), open positions (price track,
+  R now, % above the stop, day N of 20), market sectors, trade history and
+  the exit comparison. **Buy** buttons in the bot lists and **Sell now** on
+  each position send real Alpaca paper orders. Works on phones and tablets.
+  Bound to 127.0.0.1 only and **never** forwarded through ngrok because it
+  has no login. Restart `Start TradingBot.bat` after code changes.
+
+### 2.13 Automation and scripts — `scripts/`, `.bat` files
+- **What:** One-click start, scheduled scan and buy, backups, optional email.
+- **Why:** The bot must run every day without remembering to start it.
 - **How:**
   - `Start TradingBot.bat` → `start_tradingbot.ps1`: starts API (8000),
     dashboard (8001), scan pipeline, and ngrok.
-  - Windows Task Scheduler task **TradingBot Daily Scan**, Mon–Fri 8:30 AM,
-    runs `scheduled_daily_scan.ps1` → the 4 stages in order, with a mutex so
-    two scans never overlap; logs go to `logs/`.
+  - Windows Task Scheduler, weekdays, local (Central) time:
+    **TradingBot Daily Scan** at 6:00 PM runs `scheduled_daily_scan.ps1`
+    (every scan stage, with a mutex so two scans never overlap), and
+    **TradingBot Morning Buy** at 8:45 AM runs `scheduled_morning_buy.ps1`
+    (`auto_trader.py`). Logs go to `logs/`. Install or refresh both with
+    `Install Daily Scan Task.bat`; updating the existing scan task needs
+    **Run as administrator** (still to do as of 2026-11-02; until then it
+    runs at 7:30 AM).
   - `scan_notifications.py`: emails the result via SMTP (Gmail App Password)
     if configured in `.env`; skipped otherwise.
   - `Backup TradingBot.bat`: zip to `backups/`, excluding `.env` and `.venv`.
 
-### 2.10 Backtesting — `backtests/` → `results/backtests/`
-- **What:** Tested the strategy on 2019-10 → 2026-10 historical data.
+### 2.14 Backtesting — `backtests/` → `results/backtests/`
+- **What:** Tested the strategies on historical data (2019-10 → 2026-10,
+  and 10 years for the exits).
 - **Why:** Check that the rules made money in the past before trusting them,
   and check that we are not just fitting to old data.
 - **How:** Simulated trades day by day with the same stop/target/risk rules,
@@ -151,19 +233,23 @@ recorded as **paper trades** (no real money, no broker orders).
   max positions, sector limits, cash) → `benchmark_compare.py` (vs SPY,
   Sharpe/Sortino) → `backtest_dual_setup.py` (reclaim + breakout) →
   `backtest_strict_dual_setup.py` → `backtest_current_strategy.py` →
-  `backtest_holdout_validation.py`.
+  `backtest_holdout_validation.py`. Later: `backtest_bad_news_block.py`,
+  `backtest_earnings_blackout.py`, `backtest_pullback_slots.py` (Bot 2 and
+  slots), `backtest_trend_exits.py` (exits), `backtest_top200_universe.py`.
 
-### 2.11 Infrastructure as Code — `infra/terraform/`
+### 2.15 Infrastructure as Code — `infra/terraform/`
 - **What:** Modular Azure Terraform: resource group, network, Windows VM,
   data disk.
 - **Why:** Prepare to move the bot off the home PC so it runs 24/7.
 - **How:** RDP limited to one trusted IP, app ports kept private. **Not
   applied** — it costs money while running and does not yet install the app.
 
-### 2.12 Tests — `tests/`
-- **What:** `test_dashboard_data.py`, `test_paper_journal.py`,
-  `test_scan_notifications.py`.
-- **Why:** Catch breakage in the dashboard data, journal, and email logic.
+### 2.16 Tests — `tests/`
+- **What:** 255 unit tests in 16 files: auto trading (with a fake Alpaca
+  client), cash parking, dashboard data, earnings, market clock, master
+  selector, momentum scanner, news, paper exits, paper journal, pullback
+  slots, email, shadow exits, trend exits, US market universe.
+- **Why:** Catch breakage before it reaches real orders.
 - **How:** `.\.venv\Scripts\python.exe -m unittest discover -s tests -v`
 
 ---
@@ -226,6 +312,82 @@ time. The exact final one-trade-per-week strategy has **not** been backtested.
 ---
 
 ## 5. Activity Log (newest first)
+
+### 2026-11-02 — Project log sections 1 and 2 brought up to date
+
+**What:** Rewrote "The goal" and "What was built" for the current bot:
+three bots (table in section 1), new sections for Bot 2 (2.5), Bot 3
+(2.6), the slot selector (2.7) and Alpaca paper trading (2.8); risk,
+journal, dashboard, schedule, backtests and tests updated. Removed the
+old "no broker orders" and "read-only dashboard" lines.
+
+**Why:** The user asked; sections 1–2 still described the October
+one-bot, journal-only version.
+
+**How:** Text only. Sections 3 (Current State) and 4 (Open Items) are
+still from October and were not changed.
+
+### 2026-11-02 — Stops from the real fill, open-gap skip, evening scan
+
+**What:**
+- Stop and targets are now set from the **real fill price** (same 1.5 ATR
+  distance), not the price seen when the order was sent. Before, a fill
+  above the plan meant more than 1% risk and a "2R" target that was really
+  less than 2R. Bot 3's first stop too. Old bracket trades are unchanged.
+- Automatic buys are skipped when the price is more than `MAX_GAP_ATR`
+  (default 0.5) ATR above the scan price ("the planned entry is gone").
+  Dashboard Buy clicks are not checked.
+- New schedule (user lives in Texas, Central time): full scan at **6:00
+  PM** after the close (day's final bars; the scanners keep today's bar
+  after 4:15 PM New York), buy run at **8:45 AM**, 15 minutes after the
+  open. New `scripts/scheduled_morning_buy.ps1`; the buy step left
+  `scheduled_daily_scan.ps1`; `install_daily_task.ps1` registers both.
+- Scan freshness: was "under 36 hours old", which would reject Friday
+  evening's picks on Monday morning. Now `market_clock.py`: current when
+  made after the previous weekday's 3:00 PM Central close (used by
+  `slot_selector.load_fresh` and the dashboard). `SCANNER_MAX_AGE_HOURS`
+  removed from `.env.example`; `MAX_GAP_ATR` added.
+- Found: the existing Daily Scan task trigger had a fixed UTC offset
+  (-05:00), so after daylight saving ended on 2026-11-01 it would start at
+  **7:30 AM**, before the open. The installer now writes triggers without
+  an offset (they follow local time). The Morning Buy task is installed
+  (8:45 AM). Updating the old Daily Scan task was refused ("Access is
+  denied"); it needs `Install Daily Scan Task.bat` run as administrator.
+  Until then it still runs at 7:30 AM, which still works (scan only; the
+  8:45 run buys).
+
+**Why:** The user asked to make the bot more precise and when to scan
+from Texas; chose fill-price stops, the gap skip and the evening scan.
+
+**How:** `trade_manager.py` (`exit_levels`, gap check in `open_trade`,
+re-based levels in `sync`), `market_clock.py`, `slot_selector.py`,
+`app.py`, scripts, README. Tests: fill tests now expect levels from the
+fill (100.40 → stop 97.40), new `OpenGapTests`, new
+`tests/test_market_clock.py` (255 pass).
+
+### 2026-11-02 — Clearer open positions and exit comparison
+
+**What:**
+- Each position card shows "R now" (live price vs entry, in units of the
+  planned risk) and "Above stop" (% the price is above the current stop,
+  red under 3%).
+- Bot 1 / Bot 2 cards show "day N of 20" and the approximate 20-session
+  sell date ("sells ~Nov 27 if neither is hit"). Counted on weekdays in the
+  browser, so a market holiday can push it a day later.
+- Prices on the price track always show cents ($950.00, not $950).
+- Exit comparison (`shadow_exits.get_shadow_comparison`) leaves out Bot 3
+  (MOMENTUM) trades; they never use the 2R / 2.5R exits compared there.
+  Ran `shadow_exits.py` so the "Half 2R, rest 2.5R" column has results.
+- "Qualified setups" shrinks to one line when empty instead of a tall
+  empty box beside the sector chart.
+
+**Why:** The user asked what to improve on the positions page and picked
+these items.
+
+**How:** `web/dashboard.html` (`holdDays`, position card grid now 3 × 2),
+`shadow_exits.py`, new test in `tests/test_shadow_exits.py` (248 pass).
+The REGN row and the empty column disappear after restarting the
+dashboard server.
 
 ### 2026-11-02 — Each bot tab shows only its own area; REGN stop fixed
 
