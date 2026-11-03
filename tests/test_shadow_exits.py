@@ -187,6 +187,17 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(totals["RULE_2R_20D"]["closed"], 1)
         self.assertAlmostEqual(totals["RULE_2R_20D"]["total_r"], 2.0)
 
+    def test_momentum_trades_are_left_out_of_the_comparison(self):
+        self.enter("AAA")
+        record_entry(
+            "BBB", ENTRY, 2.0, SHARES, STOP, 106.0,
+            entry_time="2026-01-05T15:00:00Z", database_path=self.database,
+            strategy="MOMENTUM",
+        )
+        update_shadow_exits(self.database, fetch=self.fetch)
+        comparison = get_shadow_comparison(self.database)
+        self.assertEqual([row["ticker"] for row in comparison["trades"]], ["AAA"])
+
     def test_closed_shadows_are_not_fetched_again(self):
         self.enter("AAA")
         update_shadow_exits(self.database, fetch=self.fetch)

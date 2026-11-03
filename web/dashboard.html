@@ -101,6 +101,8 @@
     .grid-2 { display: grid; gap: 18px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .grid-hero { display: grid; gap: 18px; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); }
     .grid-intel { display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    .grid-intel .card.is-empty { align-self: start; }
+    .grid-intel .card.is-empty thead { display: none; }
     .fade-in { animation: fadeUp .6s cubic-bezier(.2,.7,.2,1) both; }
     @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 
@@ -181,7 +183,7 @@
     .marker { position: absolute; top: 50%; width: 16px; height: 16px; border-radius: 50%; transform: translate(-50%, -50%); background: var(--text); box-shadow: 0 0 0 3px var(--surface), 0 0 18px rgba(255,255,255,.4); cursor: default; transition: left .8s cubic-bezier(.2,.7,.2,1); }
     .marker-label { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); padding: 3px 8px; border-radius: 7px; background: var(--text); color: #0b1120; font-size: 11px; font-weight: 700; white-space: nowrap; }
     .marker-label::after { content: ""; position: absolute; top: 100%; left: 50%; margin-left: -4px; border: 4px solid transparent; border-top-color: var(--text); }
-    .pos-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; padding-top: 14px; border-top: 1px solid var(--line); }
+    .pos-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 10px; padding-top: 14px; border-top: 1px solid var(--line); }
     .pos-grid span { display: block; color: var(--muted); font-size: 11px; }
     .pos-grid strong { display: block; margin-top: 4px; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
     .pos-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 16px; color: var(--muted); font-size: 12px; }
@@ -810,7 +812,7 @@
         const mark = el("div", `tick ${tick.kind}`);
         mark.style.left = `${left}%`;
         const label = el("div", `tick-label${left < 8 ? " left" : left > 92 ? " right" : ""}`);
-        label.append(el("b", "", tick.name), document.createTextNode(`$${number(tick.price, 2)}`));
+        label.append(el("b", "", tick.name), document.createTextNode(money(tick.price)));
         label.style.left = `${left}%`;
         attachTip(mark, () => tipLines(`${tick.name} · $${number(tick.price, 2)}`, tick.tip));
         track.append(mark, label);
@@ -818,7 +820,7 @@
       if (live != null) {
         const marker = el("div", "marker");
         marker.style.left = `${pos(live)}%`;
-        marker.appendChild(el("div", "marker-label", `$${number(live, 2)}`));
+        marker.appendChild(el("div", "marker-label", money(live)));
         const toStop = ((live - stopNow) / live) * 100;
         attachTip(marker, () => tipLines(`Now $${number(live, 2)}`, `${number(toStop, 1)}% above the stop`, `P/L ${money(trade.unrealized_pnl, true)}`));
         track.appendChild(marker);
@@ -832,6 +834,27 @@
         track.append(end, label);
       }
       return track;
+    }
+
+    // Bot 1 / Bot 2 sell after 20 market sessions (trade_manager.py
+    // MAX_HOLD_SESSIONS). Weekdays only: holidays can push it a day later.
+    const MAX_HOLD_SESSIONS = 20;
+    const weekdayKey = (day) => day.getFullYear() * 10000 + day.getMonth() * 100 + day.getDate();
+    function holdDays(entryTime) {
+      const start = new Date(entryTime);
+      if (Number.isNaN(start.getTime())) return null;
+      const day = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+      const today = new Date();
+      const todayKey = weekdayKey(today);
+      let held = 0;
+      let exitDay = null;
+      for (let count = 0; count <= MAX_HOLD_SESSIONS; day.setDate(day.getDate() + 1)) {
+        if (day.getDay() === 0 || day.getDay() === 6) continue;
+        count += 1;
+        if (weekdayKey(day) <= todayKey) held = count;
+        if (count === MAX_HOLD_SESSIONS + 1) exitDay = new Date(day);
+      }
+      return { held: Math.min(held, MAX_HOLD_SESSIONS + 1), exitDay };
     }
 
     function renderPositions(openTrades, broker) {
@@ -851,7 +874,9 @@
         const head = el("div", "pos-top");
         const name = el("div", "pos-name");
         const meta = el("div", "pos-meta");
-        meta.append(strategyTag(trade.strategy), el("span", "", `opened ${shortDate(trade.entry_time)} · ${ago(trade.entry_time)}`));
+        const riding = trade.strategy === "MOMENTUM";
+        const hold = riding ? null : holdDays(trade.entry_time);
+        meta.append(strategyTag(trade.strategy), el("span", "", `opened ${shortDate(trade.entry_time)} · ${hold ? `day ${hold.held} of ${MAX_HOLD_SESSIONS}` : ago(trade.entry_time)}`));
         name.append(el("div", "pos-ticker", trade.ticker), meta);
         const pnl = el("div", "pos-pnl");
         pnl.append(
@@ -860,8 +885,16 @@
         );
         head.append(avatar(trade.ticker), name, pnl);
         const sharesOpen = trade.shares_open ?? trade.shares;
+        const live = trade.live_price == null ? null : Number(trade.live_price);
+        const entry = Number(trade.entry_price);
+        const riskPerShare = entry - Number(trade.stop_price);
+        const stopNow = Number(trade.active_stop_price ?? trade.stop_price);
+        const rNow = live != null && riskPerShare > 0 ? (live - entry) / riskPerShare : null;
+        const aboveStop = live != null && live > 0 ? ((live - stopNow) / live) * 100 : null;
         const details = el("div", "pos-grid");
-        for (const [label, value] of [
+        for (const [label, value, cls] of [
+          ["R now", rNow == null ? "—" : `${rNow > 0 ? "+" : rNow < 0 ? "−" : ""}${Math.abs(rNow).toFixed(2)}R`, tone(rNow)],
+          ["Above stop", aboveStop == null ? "—" : `${aboveStop.toFixed(1)}%`, aboveStop != null && aboveStop < 3 ? "negative" : ""],
           ["Shares", trade.partial_shares ? `${sharesOpen} of ${trade.shares}` : number(trade.shares)],
           ["Entry", money(trade.entry_price)],
           ["Value now", trade.live_price == null ? "—" : money(trade.live_price * sharesOpen)],
@@ -870,15 +903,16 @@
             : ["Risk to stop", money(trade.risk_at_stop)],
         ]) {
           const item = el("div");
-          item.append(el("span", "", label), el("strong", "", value));
+          item.append(el("span", "", label), el("strong", cls || "", value));
           details.appendChild(item);
         }
         const actions = el("div", "pos-actions");
-        actions.appendChild(el("span", "", trade.strategy === "MOMENTUM"
+        const note = trade.strategy === "MOMENTUM"
           ? `Trailing stop ${money(trade.active_stop_price ?? trade.stop_price)} · raised daily, no target`
           : trade.partial_shares
             ? `Half sold at ${money(trade.partial_exit_price)} · rest rides to 2.5R`
-            : trade.broker_order_id ? "Real stop and target orders at Alpaca" : "Journal-only · checked by the daily scan"));
+            : trade.broker_order_id ? "Real stop and target orders at Alpaca" : "Journal-only · checked by the daily scan";
+        actions.appendChild(el("span", "", note + (hold?.exitDay ? ` · sells ~${shortDate(hold.exitDay)} if neither is hit` : "")));
         if (broker.enabled && trade.broker_order_id) {
           const button = el("button", "btn btn-sell", "Sell now");
           button.type = "button";
@@ -1130,7 +1164,10 @@
     function renderSetups(setups) {
       const body = byId("setups-table");
       body.replaceChildren();
-      if (!Array.isArray(setups) || !setups.length) {
+      const card = body.closest(".card");
+      const empty = !Array.isArray(setups) || !setups.length;
+      card.classList.toggle("is-empty", empty);
+      if (empty) {
         emptyRow(body, 5, "No setups qualified in the latest scan. The A+ rules are strict on purpose.");
         return;
       }

@@ -264,7 +264,11 @@ def update_shadow_exits(database_path=None, fetch=fetch_daily_bars):
 
 
 def get_shadow_comparison(database_path=None):
-    """Per-trade R for the actual exit and each shadow rule, plus totals."""
+    """Per-trade R for the actual exit and each shadow rule, plus totals.
+
+    Bot 3 (MOMENTUM) trades are left out: they never use the 2R / 2.5R
+    exits compared here, so they would only add noise to the totals.
+    """
     initialize_shadow_table(database_path)
     with _connection(database_path) as connection:
         trades = connection.execute(
@@ -282,6 +286,8 @@ def get_shadow_comparison(database_path=None):
         **{rule: {"closed": 0, "total_r": 0.0, "pnl": 0.0} for rule in RULES},
     }
     for trade in trades:
+        if trade["strategy"] == "MOMENTUM":
+            continue
         planned_risk = (trade["entry_price"] - trade["stop_price"]) * trade["shares"]
         row = {
             "trade_id": trade["id"],
