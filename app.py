@@ -30,7 +30,9 @@ from paper_journal import (
     get_paper_trades,
     record_entry,
     record_exit,
+    set_trade_note,
 )
+from risk_guard import trading_pause
 from shadow_exits import get_shadow_comparison
 from market_clock import is_current, stale_message
 from slot_selector import SOURCE_A_PLUS, SOURCE_MOMENTUM, SOURCE_PULLBACK, max_open_trades
@@ -521,6 +523,13 @@ def get_dashboard_data():
             "message": f"Could not load paper journal or CSV export: {exc}",
         })
 
+    try:
+        pause = trading_pause()
+    except (OSError, sqlite3.Error):
+        pause = None
+    if pause:
+        errors.append({"source": "Buying paused", "message": pause})
+
     if not isinstance(slot_summary["bots"], dict):
         slot_summary["bots"] = {}
     listed = [
@@ -577,6 +586,7 @@ def get_dashboard_data():
         "recent_setups": topdown_setups[:10],
         "slots": slot_summary,
         "broker": broker,
+        "trading_pause": pause,
         "paper_trades": paper_trades,
         "shadow_exits": shadow_exits,
         "scans": scan_statuses,
@@ -799,6 +809,35 @@ async def dashboard_sell(request: Request):
         "shares": trade["shares"],
         "exit_price": trade["exit_price"],
         "realized_pnl": trade["realized_pnl"],
+    }
+
+
+@dashboard_app.post("/api/note")
+async def dashboard_note(request: Request):
+    """Save a trade's entry note (why) or exit note (lesson)."""
+    # Same local-dashboard-only check as /api/buy.
+    if (
+        request.headers.get("origin") not in DASHBOARD_ORIGINS
+        or request.headers.get("x-tradingbot") != "dashboard"
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Notes are only accepted from the local dashboard",
+        )
+    try:
+        data = await request.json()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Body must be JSON") from exc
+    data = data if isinstance(data, dict) else {}
+    try:
+        trade = set_trade_note(data.get("trade_id"), data.get("field"), data.get("text"))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "status": "saved",
+        "trade_id": trade["id"],
+        "entry_note": trade.get("entry_note"),
+        "exit_note": trade.get("exit_note"),
     }
 
 

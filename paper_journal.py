@@ -38,6 +38,9 @@ TRADE_CSV_FIELDS = (
     "partial_exit_time",
     "half_order_id",
     "rest_order_id",
+    "sector",
+    "entry_note",
+    "exit_note",
 )
 
 # Columns added after the first journals were created.
@@ -56,8 +59,16 @@ ADDED_COLUMNS = {
     # Alpaca OCO sell orders (limit target + stop) for each part.
     "half_order_id": "TEXT",
     "rest_order_id": "TEXT",
+    # One trade per sector at a time (trade_manager.MAX_TRADES_PER_SECTOR).
+    "sector": "TEXT",
+    # Trade journal notes: why the trade was taken (filled in from the
+    # bot's reason at entry, editable) and what was learned at the exit.
+    "entry_note": "TEXT",
+    "exit_note": "TEXT",
 }
-BROKER_ORDER_ADDED_COLUMNS = {"target2_price": "REAL"}
+BROKER_ORDER_ADDED_COLUMNS = {"target2_price": "REAL", "sector": "TEXT", "entry_note": "TEXT"}
+NOTE_FIELDS = ("entry_note", "exit_note")
+MAX_NOTE_LENGTH = 2000
 
 
 class DuplicateSignalError(Exception):
@@ -285,6 +296,8 @@ def record_entry(
     entry_source=None,
     broker_order_id=None,
     target2_price=None,
+    sector=None,
+    entry_note=None,
 ):
     ticker = str(ticker).strip().upper()
     if not ticker:
@@ -332,8 +345,9 @@ def record_entry(
             INSERT INTO paper_trades (
                 ticker, entry_time, entry_price, atr, shares, stop_price,
                 target_price, setup_score, status, strategy,
-                entry_source, broker_order_id, target2_price
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?)
+                entry_source, broker_order_id, target2_price, sector,
+                entry_note
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?, ?, ?)
             """,
             (
                 ticker,
@@ -351,6 +365,8 @@ def record_entry(
                 entry_source,
                 broker_order_id,
                 target2_price,
+                sector or None,
+                entry_note or None,
             ),
         )
         trade = dict(connection.execute(
@@ -519,6 +535,8 @@ def add_broker_order(
     setup_score=None,
     database_path=None,
     target2_price=None,
+    sector=None,
+    entry_note=None,
 ):
     """Remember a sent entry order until it fills or is canceled."""
     initialize_journal(database_path)
@@ -528,8 +546,8 @@ def add_broker_order(
             INSERT INTO broker_orders (
                 order_id, ticker, strategy, entry_source, shares, atr,
                 stop_price, target_price, setup_score, status, submitted_at,
-                target2_price
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?)
+                target2_price, sector, entry_note
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?)
             """,
             (
                 str(order_id),
@@ -543,8 +561,67 @@ def add_broker_order(
                 setup_score,
                 time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                 float(target2_price) if target2_price is not None else None,
+                sector or None,
+                entry_note or None,
             ),
         )
+
+
+def held_sectors(database_path=None):
+    """{sector: [tickers]} for open trades and entry orders not yet filled.
+
+    Trades with no recorded sector are left out.
+    """
+    initialize_journal(database_path)
+    with _connection(database_path) as connection:
+        rows = connection.execute(
+            """
+            SELECT ticker, sector FROM paper_trades WHERE status = 'OPEN'
+            UNION ALL
+            SELECT ticker, sector FROM broker_orders WHERE status = 'PENDING'
+            """
+        ).fetchall()
+    sectors = {}
+    for row in rows:
+        if row["sector"]:
+            sectors.setdefault(row["sector"], []).append(row["ticker"])
+    return sectors
+
+
+def get_closed_trades(database_path=None):
+    """Closed trades, newest exit first."""
+    initialize_journal(database_path)
+    with _connection(database_path) as connection:
+        rows = connection.execute(
+            "SELECT * FROM paper_trades WHERE status = 'CLOSED' "
+            "ORDER BY exit_time DESC, id DESC"
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def set_trade_note(trade_id, field, text, database_path=None):
+    """Save the entry note (why) or exit note (lesson) of one trade."""
+    if field not in NOTE_FIELDS:
+        raise ValueError(f"Note field must be one of {', '.join(NOTE_FIELDS)}")
+    text = str(text or "").strip()
+    if len(text) > MAX_NOTE_LENGTH:
+        raise ValueError(f"Note is longer than {MAX_NOTE_LENGTH} characters")
+    initialize_journal(database_path)
+    with _connection(database_path) as connection:
+        cursor = connection.execute(
+            f"UPDATE paper_trades SET {field} = ? WHERE id = ?",
+            (text or None, int(trade_id)),
+        )
+        if cursor.rowcount == 0:
+            raise ValueError(f"No paper trade with id {trade_id}")
+        trade = dict(connection.execute(
+            "SELECT * FROM paper_trades WHERE id = ?", (int(trade_id),)
+        ).fetchone())
+    try:
+        export_paper_trades_csv(database_path)
+    except PaperTradeExportError:
+        pass
+    return trade
 
 
 def get_pending_broker_orders(database_path=None):

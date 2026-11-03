@@ -10,6 +10,10 @@ list from each bot (Bot 1 = A+, Bot 2 = leader pullback, Bot 3 = momentum),
 so stocks can also be picked by hand. The webhook approves a pullback BUY
 for any stock in the Bot 2 list. auto_trader.py buys the slot picks.
 
+At most MAX_TRADES_PER_SECTOR (default 1) trades per sector across all
+three bots: a pick whose sector is already held or picked is passed over
+for the next stock in the list.
+
 Earnings and news are shown as warnings for pullbacks; neither was part
 of the pullback backtest, so neither blocks a pullback. Every listed
 stock gets warnings (earnings within 2 weeks, bad news or bad earnings,
@@ -26,7 +30,7 @@ from dotenv import load_dotenv
 from earnings_calendar import check_earnings
 from master_selector import build_risk_preview, parse_timestamp
 from news_checker import check_news
-from paper_journal import get_paper_trades, get_pending_broker_orders
+from paper_journal import get_paper_trades, get_pending_broker_orders, held_sectors
 from market_clock import is_current, stale_message
 from project_paths import (
     MASTER_CANDIDATES_JSON,
@@ -69,6 +73,23 @@ def momentum_slots():
     return max(slots, 0)
 
 
+def max_trades_per_sector():
+    """Open trades allowed per sector, all bots together; 0 = no limit."""
+    return int(os.getenv("MAX_TRADES_PER_SECTOR", "1"))
+
+
+def sector_full(stock, sector_counts):
+    """True when the stock's sector already has the most trades allowed."""
+    limit = max_trades_per_sector()
+    sector = stock.get("sector")
+    return bool(sector) and limit > 0 and sector_counts.get(sector, 0) >= limit
+
+
+def take_sector(stock, sector_counts):
+    if stock.get("sector"):
+        sector_counts[stock["sector"]] = sector_counts.get(stock["sector"], 0) + 1
+
+
 def busy_by_bot(open_trades, pending_orders):
     """Tickers using a slot, split into (Bot 1 / Bot 2 slots, Bot 3 slots)."""
     main, momentum = [], []
@@ -78,8 +99,9 @@ def busy_by_bot(open_trades, pending_orders):
     return main, momentum
 
 
-def build_momentum_selection(momentum, held_tickers, busy_count, slots):
+def build_momentum_selection(momentum, held_tickers, busy_count, slots, sector_counts=None):
     """Picks for Bot 3's free slots, biggest volume surge first."""
+    sector_counts = {} if sector_counts is None else sector_counts
     held = {str(ticker).upper() for ticker in held_tickers}
     free = max(slots - busy_count, 0)
     picks = []
@@ -89,9 +111,10 @@ def build_momentum_selection(momentum, held_tickers, busy_count, slots):
         if not isinstance(setup, dict) or not setup.get("ticker"):
             continue
         ticker = str(setup["ticker"]).upper()
-        if ticker in held:
+        if ticker in held or sector_full(setup, sector_counts):
             continue
         held.add(ticker)
+        take_sector(setup, sector_counts)
         picks.append({
             **setup,
             "ticker": ticker,
@@ -134,8 +157,13 @@ def load_fresh(path, label, warnings, now=None):
     return payload
 
 
-def build_slot_selection(master, pullbacks, open_tickers, max_slots):
-    """Pick stocks for the free slots, A+ first, skipping stocks held."""
+def build_slot_selection(master, pullbacks, open_tickers, max_slots, sector_counts=None):
+    """Pick stocks for the free slots, A+ first, skipping stocks held.
+
+    `sector_counts` ({sector: trades}) is updated with the picks, so the
+    Bot 3 pick after it sees them too.
+    """
+    sector_counts = {} if sector_counts is None else sector_counts
     candidates = []
     best = (master or {}).get("best_current")
     if isinstance(best, dict) and best.get("ticker"):
@@ -152,9 +180,10 @@ def build_slot_selection(master, pullbacks, open_tickers, max_slots):
         if len(selections) >= free_slots:
             break
         ticker = str(stock["ticker"]).upper()
-        if ticker in held:
+        if ticker in held or sector_full(stock, sector_counts):
             continue
         held.add(ticker)
+        take_sector(stock, sector_counts)
         selections.append({
             **stock,
             "ticker": ticker,
@@ -321,18 +350,23 @@ def main():
         get_paper_trades(limit=1)["open"], get_pending_broker_orders()
     )
     open_tickers = main_busy + momentum_busy
+    sector_counts = {
+        sector: len(tickers) for sector, tickers in held_sectors().items()
+    }
 
     selection = build_slot_selection(
         master=master,
         pullbacks=pullbacks,
         open_tickers=main_busy,
         max_slots=max_open_trades(),
+        sector_counts=sector_counts,
     )
     momentum_selection = build_momentum_selection(
         momentum,
         held_tickers=open_tickers + [s["ticker"] for s in selection["selections"]],
         busy_count=len(momentum_busy),
         slots=momentum_slots(),
+        sector_counts=sector_counts,
     )
     selection["open_positions"] = sorted(set(open_tickers))
     selection["selections"] += momentum_selection["momentum_selections"]

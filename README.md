@@ -295,6 +295,22 @@ gain is small. Selling everything at 3R was worse (+37%). Trades opened before
   skipped when its price is more than `MAX_GAP_ATR` (default 0.5) ATR above
   the scan price: the stock already ran and the planned entry is gone.
   Dashboard **Buy** clicks are not checked.
+- **Protection** (automatic buys only; dashboard Buy clicks are not blocked):
+  - **Earnings:** a Bot 1 / Bot 2 trade is sold at market in the morning
+    run when its earnings report is today or on the next trading day
+    (`EARNINGS_EXIT`), and a pick with earnings within 2 trading days is
+    not bought. Bot 3 rides through earnings on purpose.
+  - **One trade per sector** (`MAX_TRADES_PER_SECTOR`, default 1) across
+    all three bots: the slot picker passes over a stock whose sector is
+    already held and takes the next one.
+  - **Loss limit** (`risk_guard.py`): new buys pause after a loss of
+    `MAX_MONTHLY_LOSS_PCT` (6) % of `PAPER_ACCOUNT_BALANCE` in 30 days, or
+    for 7 days after `LOSING_STREAK_LIMIT` (5) losses in a row. Open trades
+    keep their stops and targets. The dashboard shows the pause under
+    System notes.
+- **Trade notes:** every trade has a "Why" note (filled in from the bot's
+  reason at the buy) and a "Lesson" note, edited on the dashboard (position
+  cards and trade history) and saved in the journal and CSV.
 - Each **Buy** button in the dashboard's Bot 1 / Bot 2 lists buys that stock
   (cherry-picking), as long as a slot is free.
 - Every buy is a market buy. Once it fills, two Alpaca **OCO** sell orders

@@ -16,6 +16,16 @@ the targets stay a true 2R / 2.5R. An automatic buy is skipped when the
 price is more than MAX_GAP_ATR (default 0.5) ATR above the scan price:
 the stock already ran and the planned entry is gone.
 
+Protection (2026-11-03):
+  - earnings_exits() sells a Bot 1 / Bot 2 trade at market the morning
+    before its earnings report (report today or on the next trading day,
+    EARNINGS_EXIT); an automatic buy that would have to be sold that way
+    (earnings within 2 trading days of the scan) is skipped. Bot 3 rides
+    through earnings on purpose.
+  - At most MAX_TRADES_PER_SECTOR (default 1) open trades or waiting
+    orders per sector, across all three bots, for automatic buys.
+  - risk_guard.py pauses automatic buys after a bad run.
+
 sync() brings the journal up to date with Alpaca:
   - a filled entry order becomes an open journal trade (fill price) and
     gets its two exit orders (retried on the next sync if that fails)
@@ -48,6 +58,7 @@ from datetime import date, datetime, timedelta, timezone
 from paper_journal import (
     _connection,
     add_broker_order,
+    held_sectors,
     close_trade,
     finish_broker_order,
     get_pending_broker_orders,
@@ -56,9 +67,17 @@ from paper_journal import (
     record_partial_exit,
     update_trade_orders,
 )
-from slot_selector import SOURCE_MOMENTUM, busy_by_bot, max_open_trades, momentum_slots
+from slot_selector import (
+    SOURCE_MOMENTUM,
+    busy_by_bot,
+    max_open_trades,
+    max_trades_per_sector,
+    momentum_slots,
+)
 
 MAX_HOLD_SESSIONS = 20
+# Sell when earnings are today or on the next trading day.
+EARNINGS_EXIT_DAYS = 1
 TRAIL_ATR_MULTIPLIER = 3.0
 SOURCE_AUTO = "AUTO"
 SOURCE_MANUAL = "MANUAL"
@@ -95,6 +114,33 @@ def risk_settings():
 
 def max_gap_atr():
     return float(os.getenv("MAX_GAP_ATR", "0.5"))
+
+
+def entry_reason(stock, strategy):
+    """Why the bot picked the stock, saved as the trade's entry note."""
+    def pct(key):
+        value = stock.get(key)
+        return None if value is None else f"{float(value):+.1f}%"
+
+    if strategy == SOURCE_MOMENTUM:
+        parts = ["Bot 3 momentum jump", pct("jump_pct") and f"{pct('jump_pct')} on the day"]
+        if stock.get("volume_ratio") is not None:
+            parts.append(f"volume {float(stock['volume_ratio']):.1f}x normal")
+    elif strategy == "PULLBACK":
+        parts = [
+            "Bot 2 leader pullback",
+            pct("return_6m") and f"6-month {pct('return_6m')}",
+            pct("return_5d") and f"5-day {pct('return_5d')}",
+        ]
+    else:
+        parts = [
+            "Bot 1 A+ setup",
+            stock.get("setup_type"),
+            stock.get("setup_score") is not None and f"score {float(stock['setup_score']):g}",
+        ]
+    if stock.get("sector"):
+        parts.append(str(stock["sector"]))
+    return " · ".join(str(part) for part in parts if part)
 
 
 def exit_levels(price, atr, settings):
@@ -182,6 +228,8 @@ def open_trade(client, stock, strategy, entry_source, price_lookup, database_pat
                 f"${planned:.2f} (more than {max_gap_atr():g} ATR); the "
                 "planned entry is gone."
             )
+    if entry_source == SOURCE_AUTO:
+        _check_auto_protection(ticker, stock, strategy, database_path)
     plan = plan_order(price, atr, risk_settings())
     if strategy == SOURCE_MOMENTUM:
         # Rides with a trailing stop; the 2R target is only for reference.
@@ -206,6 +254,8 @@ def open_trade(client, stock, strategy, entry_source, price_lookup, database_pat
         entry_source=entry_source,
         setup_score=stock.get("setup_score"),
         database_path=database_path,
+        sector=stock.get("sector"),
+        entry_note=entry_reason(stock, strategy),
     )
     return {
         "ticker": ticker,
@@ -215,6 +265,24 @@ def open_trade(client, stock, strategy, entry_source, price_lookup, database_pat
         "price": price,
         **plan,
     }
+
+
+def _check_auto_protection(ticker, stock, strategy, database_path):
+    """Earnings and sector rules for automatic buys (TradeError if not)."""
+    days = (stock.get("earnings") or {}).get("trading_days_until")
+    if strategy != SOURCE_MOMENTUM and days is not None and days <= EARNINGS_EXIT_DAYS + 1:
+        raise TradeError(
+            f"earnings in {days} trading day(s); it would be sold before the "
+            "report right away."
+        )
+    sector = stock.get("sector")
+    limit = max_trades_per_sector()
+    if sector and limit > 0:
+        same = held_sectors(database_path).get(sector, [])
+        if len(same) >= limit:
+            raise TradeError(
+                f"{sector} already has {', '.join(same)} (max {limit} per sector)."
+            )
 
 
 def _submit_oco(client, ticker, shares, target, stop):
@@ -430,6 +498,8 @@ def sync(client, price_lookup, database_path=None, today=None, delay=1.0):
                 entry_source=pending["entry_source"],
                 broker_order_id=pending["order_id"],
                 target2_price=target2,
+                sector=pending.get("sector"),
+                entry_note=pending.get("entry_note"),
             )
             finish_broker_order(
                 pending["order_id"], "FILLED", trade_id=trade["id"],
@@ -608,7 +678,9 @@ def _sell_at_market(client, trade, orders, reason, price_lookup, database_path, 
     )
 
 
-def sell_trade(client, ticker, price_lookup, database_path=None, delay=1.0):
+def sell_trade(
+    client, ticker, price_lookup, database_path=None, delay=1.0, reason="MANUAL_SELL"
+):
     """Sell an open Alpaca paper trade now, at market (dashboard Sell)."""
     from alpaca.trading.requests import GetOrderByIdRequest
 
@@ -653,5 +725,49 @@ def sell_trade(client, ticker, price_lookup, database_path=None, delay=1.0):
                 )
                 raise TradeError(f"{ticker} already closed at its {reason.lower()}")
     return _sell_at_market(
-        client, trade, orders, "MANUAL_SELL", price_lookup, database_path, delay
+        client, trade, orders, reason, price_lookup, database_path, delay
     )
+
+
+def earnings_exits(client, price_lookup, check, database_path=None, delay=1.0):
+    """Sell Bot 1 / Bot 2 trades whose earnings are today or next session.
+
+    `check(ticker)` is earnings_calendar.check_earnings. Returns messages.
+    """
+    if not client.get_clock().is_open:
+        return []
+    initialize_journal(database_path)
+    with _connection(database_path) as connection:
+        trades = [
+            dict(row)
+            for row in connection.execute(
+                "SELECT * FROM paper_trades WHERE status = 'OPEN' "
+                "AND broker_order_id IS NOT NULL"
+            )
+        ]
+    messages = []
+    for trade in trades:
+        if trade["strategy"] == SOURCE_MOMENTUM:
+            continue
+        earnings = check(trade["ticker"])
+        days = earnings.get("trading_days_until")
+        if days is None or days > EARNINGS_EXIT_DAYS:
+            continue
+        try:
+            closed = sell_trade(
+                client, trade["ticker"], price_lookup, database_path, delay,
+                reason="EARNINGS_EXIT",
+            )
+        except TradeError as exc:
+            messages.append(f"Earnings exit {trade['ticker']} skipped: {exc}")
+            continue
+        except Exception as exc:  # Alpaca errors: retried next run
+            messages.append(f"Earnings exit {trade['ticker']} failed, will retry: {exc}")
+            continue
+        messages.append(
+            f"SOLD BEFORE EARNINGS {trade['ticker']} "
+            f"(report {earnings.get('next_earnings_date')}): "
+            f"{closed['shares']} @ ${closed['exit_price']:.2f}, "
+            f"P&L ${closed['realized_pnl']:+.2f}"
+        )
+    return messages

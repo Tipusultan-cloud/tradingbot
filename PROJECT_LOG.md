@@ -307,11 +307,50 @@ time. The exact final one-trade-per-week strategy has **not** been backtested.
       orders appear, and the stop moves to entry after the half fills.
 - [ ] After 2-3 months of paper trades, compare `A_PLUS` vs `PULLBACK`
       results in the journal against the backtest.
+- [x] Earnings exit, one trade per sector, account loss limit (2026-11-03).
+- [x] Trade journal notes: why / lesson (2026-11-03).
+- [ ] Run Bot 1 / Bot 2 backtests with the earnings exit and the sector
+      limit, to see what they cost in return.
 - [ ] Real-money automation — only after enough forward paper-trading evidence.
 
 ---
 
 ## 5. Activity Log (newest first)
+
+### 2026-11-03 — Earnings exit, one trade per sector, loss limit, trade notes
+
+**What:**
+- **Earnings exit:** the 8:45 AM run sells a Bot 1 / Bot 2 trade at market
+  when its earnings are today or on the next trading day (`EARNINGS_EXIT`,
+  "Sold before earnings" on the dashboard). Automatic buys with earnings
+  within 2 trading days of the scan are skipped. Bot 3 rides through
+  earnings (the user accepted its risk). Report time (before the open or
+  after the close) is not known, so "today" sells too.
+- **One trade per sector** across all bots (`MAX_TRADES_PER_SECTOR`=1):
+  the slot picker passes over a stock whose sector is held or already
+  picked, and `open_trade` refuses it for automatic buys. New `sector`
+  column on trades and entry orders; the open trades were filled in by
+  hand: FTNT Information Technology, MPC Energy, REGN Health Care.
+- **Loss limit** (`risk_guard.py`): automatic buys pause after a realized
+  loss of 6% of `PAPER_ACCOUNT_BALANCE` ($600) in 30 days, or for 7 days
+  after 5 losses in a row. Shown under System notes ("Buying paused").
+- **Trade notes** (item 10 of the 2026-11-02 list): `entry_note` ("Why",
+  filled in from the bot's reason at the buy) and `exit_note` ("Lesson"),
+  edited from the position cards and the trade history (`POST /api/note`,
+  local dashboard only). REGN's note was filled in from its scan.
+
+**Why:** The user asked for items 1–3 of "what is missing for my swing
+trade" (protection against earnings gaps, a bad run, and too many trades in
+one sector), then item 10 (a trade journal with notes).
+
+**How:** `trade_manager.py` (`earnings_exits`, `_check_auto_protection`,
+`entry_reason`, `sell_trade(reason=)`), `slot_selector.py`
+(`max_trades_per_sector`, `sector_full`), `paper_journal.py` (`sector`,
+`entry_note`, `exit_note` columns, `held_sectors`, `get_closed_trades`,
+`set_trade_note`), `risk_guard.py`, `auto_trader.py`, `app.py`,
+`web/dashboard.html`. Tests: new `tests/test_protection.py` (272 pass).
+Note: MPC's earnings were listed for 2026-11-03, so the first morning run
+with this code sells it (EARNINGS_EXIT).
 
 ### 2026-11-02 — Project log sections 1 and 2 brought up to date
 

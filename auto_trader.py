@@ -17,11 +17,20 @@ import time
 
 from broker import auto_trading_status, get_trading_client, latest_price
 from cash_parking import rebalance
+from earnings_calendar import check_earnings
 from paper_journal import get_pending_broker_orders
 from shadow_exits import fetch_daily_bars
 from project_paths import SLOT_SELECTION_JSON
+from risk_guard import trading_pause
 from slot_selector import load_fresh
-from trade_manager import SOURCE_AUTO, TradeError, open_trade, sync, update_trailing_stops
+from trade_manager import (
+    SOURCE_AUTO,
+    TradeError,
+    earnings_exits,
+    open_trade,
+    sync,
+    update_trailing_stops,
+)
 
 FILL_WAIT_SECONDS = 10
 # Market buys usually fill in seconds but can take longer at the open
@@ -78,6 +87,9 @@ def main(argv=None):
     if "--sync" in argv:
         return 0
 
+    # Sold before buying, so a freed slot or sector can be refilled.
+    for message in earnings_exits(client, latest_price, check_earnings):
+        print(message)
     buy_picks(client)
     park_cash(client)
     return 0
@@ -104,6 +116,10 @@ def buy_picks(client):
     picks = (slots or {}).get("selections") or []
     if not picks:
         print("No slot picks to buy.")
+        return
+    pause = trading_pause()
+    if pause:
+        print("BUYING PAUSED:", pause)
         return
 
     placed = 0
