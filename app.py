@@ -33,6 +33,7 @@ from paper_journal import (
     set_trade_note,
 )
 from risk_guard import trading_pause
+from report_card import build_report as build_report_card
 from shadow_exits import get_shadow_comparison
 from market_clock import is_current, stale_message
 from slot_selector import SOURCE_A_PLUS, SOURCE_MOMENTUM, SOURCE_PULLBACK, max_open_trades
@@ -529,6 +530,10 @@ def get_dashboard_data():
         pause = None
     if pause:
         errors.append({"source": "Buying paused", "message": pause})
+    try:
+        report_card = build_report_card()
+    except (OSError, sqlite3.Error):
+        report_card = None
 
     if not isinstance(slot_summary["bots"], dict):
         slot_summary["bots"] = {}
@@ -587,6 +592,7 @@ def get_dashboard_data():
         "slots": slot_summary,
         "broker": broker,
         "trading_pause": pause,
+        "report_card": report_card,
         "paper_trades": paper_trades,
         "shadow_exits": shadow_exits,
         "scans": scan_statuses,

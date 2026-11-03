@@ -309,6 +309,9 @@ time. The exact final one-trade-per-week strategy has **not** been backtested.
       results in the journal against the backtest.
 - [x] Earnings exit, one trade per sector, account loss limit (2026-11-03).
 - [x] Trade journal notes: why / lesson (2026-11-03).
+- [x] Weekly report card per bot vs backtest (2026-11-03).
+- [ ] Planned vs real buy price (slippage) in the report card: store the
+      scan price on each entry order.
 - [ ] Run Bot 1 / Bot 2 backtests with the earnings exit and the sector
       limit, to see what they cost in return.
 - [ ] Real-money automation — only after enough forward paper-trading evidence.
@@ -316,6 +319,31 @@ time. The exact final one-trade-per-week strategy has **not** been backtested.
 ---
 
 ## 5. Activity Log (newest first)
+
+### 2026-11-03 — Weekly report card
+
+**What:** New `report_card.py`: for each bot, from the closed paper
+trades, win rate, average win and average loss in R, R per trade
+(expectancy), total R and P&L, this week and all time, with the week's
+closed trades and their lesson notes. R = realized P&L / (shares × (entry −
+first stop)). Compared with the 10-year backtests: Bot 1 49.2% / +0.34R,
+Bot 2 48.7% / +0.31R (2026-10-28, 1-slot runs), Bot 3 33% win rate (no R
+benchmark; it rests on a few huge winners). Verdict after 10 closed trades:
+"On track", or "Below backtest" when the win rate is more than 10 points
+lower or R per trade under half the backtest's; before that "Too early".
+
+- Dashboard: "Weekly report card" table at the top of Trade history.
+- Email: the evening scan runs `report_card.py --friday` (emails on
+  Fridays only); `--email` sends it now. `scan_notifications.send_email()`
+  is the shared sender.
+
+**Why:** The user picked the report card (item 6 of the 2026-11-02 list)
+as the next step.
+
+**How:** `report_card.py`, `scan_notifications.py`, `app.py`
+(`report_card` in the dashboard data), `web/dashboard.html`,
+`scripts/scheduled_daily_scan.ps1`. Tests: new `tests/test_report_card.py`
+(278 pass). No closed trades yet, so every bot shows "Too early".
 
 ### 2026-11-03 — Earnings exit, one trade per sector, loss limit, trade notes
 
@@ -337,7 +365,10 @@ time. The exact final one-trade-per-week strategy has **not** been backtested.
 - **Trade notes** (item 10 of the 2026-11-02 list): `entry_note` ("Why",
   filled in from the bot's reason at the buy) and `exit_note` ("Lesson"),
   edited from the position cards and the trade history (`POST /api/note`,
-  local dashboard only). REGN's note was filled in from its scan.
+  local dashboard only). The open trades bought before notes existed were
+  filled in by hand: REGN from its scan; FTNT (6-month +65.0%, 5-day
+  -19.6%) and MPC (6-month +75.3%, 5-day -5.8%) from yfinance closes on
+  2026-10-29, the scan day before their buy.
 
 **Why:** The user asked for items 1–3 of "what is missing for my swing
 trade" (protection against earnings gaps, a bad run, and too many trades in

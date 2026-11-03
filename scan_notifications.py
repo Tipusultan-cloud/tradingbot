@@ -157,21 +157,27 @@ def build_slot_message(path=SLOT_SELECTION_JSON):
 
 
 def send_scan_email():
+    slot_text = build_slot_message()
+    return send_email(
+        "TradingBot daily scan summary",
+        f"{build_scan_message()}\n\n"
+        + (f"{slot_text}\n\n" if slot_text else "")
+        + "This is a paper-trading research alert, not a trade order.",
+    )
+
+
+def send_email(subject, body):
+    """Send one plain-text email with the .env SMTP settings."""
     settings = _email_settings()
     if settings is None:
         print("Email alert skipped: SMTP is not configured.")
         return False
 
     message = EmailMessage()
-    message["Subject"] = "TradingBot daily scan summary"
+    message["Subject"] = subject
     message["From"] = settings["SMTP_USERNAME"]
     message["To"] = settings["TRADINGBOT_ALERT_EMAIL"]
-    slot_text = build_slot_message()
-    message.set_content(
-        f"{build_scan_message()}\n\n"
-        + (f"{slot_text}\n\n" if slot_text else "")
-        + "This is a paper-trading research alert, not a trade order."
-    )
+    message.set_content(body)
     try:
         with smtplib.SMTP_SSL(
             settings["SMTP_HOST"],

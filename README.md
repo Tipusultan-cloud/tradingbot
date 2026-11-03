@@ -308,6 +308,13 @@ gain is small. Selling everything at 3R was worse (+37%). Trades opened before
     for 7 days after `LOSING_STREAK_LIMIT` (5) losses in a row. Open trades
     keep their stops and targets. The dashboard shows the pause under
     System notes.
+- **Weekly report card** (`report_card.py`): for each bot, from the closed
+  trades, win rate, average win and loss in R, R per trade, total R and
+  P&L, this week and all time, against its 10-year backtest (Bot 1 49% /
+  +0.34R, Bot 2 49% / +0.31R, Bot 3 33% win rate). A verdict ("On track" /
+  "Below backtest") appears after 10 closed trades. Shown on the dashboard
+  (Trade history) and emailed on Fridays by the evening scan;
+  `python report_card.py --email` sends it now.
 - **Trade notes:** every trade has a "Why" note (filled in from the bot's
   reason at the buy) and a "Lesson" note, edited on the dashboard (position
   cards and trade history) and saved in the journal and CSV.

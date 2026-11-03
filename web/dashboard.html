@@ -591,6 +591,12 @@
       <a class="btn btn-ghost" href="/api/paper-trades.csv"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>Download all trades (CSV)</a>
     </div>
     <section class="card">
+      <div class="card-head"><h3>Weekly report card</h3><span id="report-week" class="hint">Each bot against its 10-year backtest · emailed on Fridays</span></div>
+      <div class="card-body table-wrap">
+        <table><thead><tr><th>Bot</th><th>Closed</th><th>Win rate</th><th>Avg win</th><th>Avg loss</th><th>R per trade</th><th>Total</th><th>P&amp;L</th><th>Verdict</th></tr></thead><tbody id="report-table"><tr><td colspan="9" class="empty">Loading report card…</td></tr></tbody></table>
+      </div>
+    </section>
+    <section class="card">
       <div class="card-body table-wrap">
         <table><thead><tr><th>Stock</th><th>Bot</th><th>Closed</th><th>Entry</th><th>Exit</th><th>Shares</th><th>Exit reason</th><th>Realized P&amp;L</th><th>Notes</th></tr></thead><tbody id="paper-trades-table"><tr><td colspan="9" class="empty">Loading trade history…</td></tr></tbody></table>
       </div>
@@ -1267,6 +1273,40 @@
       }
     }
 
+    // report_card.py: all-time results per bot against its backtest.
+    function renderReportCard(report) {
+      const body = byId("report-table");
+      body.replaceChildren();
+      if (!report?.bots) {
+        emptyRow(body, 9, "Report card not available.");
+        return;
+      }
+      const r = (value) => value == null ? null : `${value > 0 ? "+" : value < 0 ? "−" : ""}${Math.abs(value).toFixed(2)}R`;
+      const pct = (value) => value == null ? null : `${number(value, 0)}%`;
+      const week = report.total?.week || {};
+      byId("report-week").textContent = `This week: ${number(week.closed ?? 0)} closed`
+        + (week.closed ? ` · ${r(week.total_r)} · ${money(week.pnl, true)}` : "")
+        + " · each bot against its 10-year backtest · emailed on Fridays";
+      const verdicts = { EARLY: ["Too early", ""], ON_TRACK: ["On track", "positive"], BELOW: ["Below backtest", "negative"] };
+      for (const [code, bot] of Object.entries(report.bots)) {
+        const stats = bot.all_time || {};
+        const test = bot.backtest || {};
+        const row = document.createElement("tr");
+        td(row, strategyTag(code));
+        td(row, `${number(stats.closed ?? 0)}${bot.open ? ` (+${bot.open} open)` : ""}`);
+        td(row, `${pct(stats.win_rate) ?? "—"} · test ${pct(test.win_rate) ?? "—"}`, "num-dim");
+        td(row, r(stats.avg_win_r), tone(stats.avg_win_r));
+        td(row, r(stats.avg_loss_r), tone(stats.avg_loss_r));
+        td(row, `${r(stats.expectancy_r) ?? "—"} · test ${r(test.expectancy_r) ?? "—"}`, tone(stats.expectancy_r));
+        td(row, stats.closed ? r(stats.total_r) : null, tone(stats.total_r));
+        td(row, stats.closed ? money(stats.pnl, true) : null, tone(stats.pnl));
+        const [label, cls] = verdicts[bot.verdict] || [bot.verdict, ""];
+        const cell = td(row, label, cls);
+        cell.title = bot.verdict_text || "";
+        body.appendChild(row);
+      }
+    }
+
     function renderShadow(shadow) {
       const totals = shadow?.totals || {};
       const cards = byId("shadow-summary");
@@ -1624,6 +1664,7 @@
         renderSectors(data.sector_ranking);
         renderSetups(data.recent_setups);
         renderHistory(data.paper_trades?.recent);
+        renderReportCard(data.report_card);
         renderShadow(data.shadow_exits);
         renderSystem(data.scans || {}, data.errors);
       } catch (error) {

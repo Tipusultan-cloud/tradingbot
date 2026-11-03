@@ -93,6 +93,13 @@ try {
         Write-Warning "Shadow exit update failed; the scan result is unaffected."
     }
 
+    # Weekly report card: printed every run, emailed on Fridays.
+    Write-Host ""
+    & $Python ".\report_card.py" --friday
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning "Report card failed; the scan result is unaffected."
+    }
+
     Write-Host ""
     Write-Host "Sending scan summary email if configured..."
     & $Python ".\scan_notifications.py"
