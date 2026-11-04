@@ -26,6 +26,27 @@ def auto_trading_status():
     return True, "Alpaca paper trading"
 
 
+ALL_BOTS = ("A_PLUS", "PULLBACK", "MOMENTUM")
+
+
+def auto_buy_bots():
+    """Bots whose slot picks the morning run buys (AUTO_BUY_BOTS in .env,
+    comma-separated A_PLUS, PULLBACK, MOMENTUM). Unset = all three; the
+    others are bought by hand from the dashboard."""
+    load_dotenv(BASE_DIR / ".env")
+    value = os.getenv("AUTO_BUY_BOTS", "").strip()
+    if not value:
+        return list(ALL_BOTS)
+    bots = [item.strip().upper() for item in value.split(",") if item.strip()]
+    unknown = [bot for bot in bots if bot not in ALL_BOTS]
+    if unknown:
+        raise RuntimeError(
+            f"AUTO_BUY_BOTS has unknown bot(s) {', '.join(unknown)}; "
+            f"use {', '.join(ALL_BOTS)}"
+        )
+    return [bot for bot in ALL_BOTS if bot in bots]
+
+
 def get_trading_client():
     enabled, reason = auto_trading_status()
     if not enabled:

@@ -8,14 +8,15 @@
 free their slots); the full run is the 8:45 AM Central morning buy
 (scripts/scheduled_morning_buy.ps1), 15 minutes after the open. Does nothing unless
 AUTO_TRADING=true with Alpaca paper keys in .env (see broker.py), and
-only sends orders while the market is open. Hand-picked trades come
-from the dashboard Buy button.
+only sends orders while the market is open. Only the bots named in
+AUTO_BUY_BOTS (default all) are bought automatically; hand-picked trades
+come from the dashboard Buy button.
 """
 
 import sys
 import time
 
-from broker import auto_trading_status, get_trading_client, latest_price
+from broker import auto_buy_bots, auto_trading_status, get_trading_client, latest_price
 from cash_parking import rebalance
 from earnings_calendar import check_earnings
 from paper_journal import get_pending_broker_orders
@@ -114,6 +115,15 @@ def buy_picks(client):
     for warning in warnings:
         print("WARNING:", warning)
     picks = (slots or {}).get("selections") or []
+    allowed = auto_buy_bots()
+    for stock in picks:
+        if stock.get("source") not in allowed:
+            print(
+                f"Not bought automatically: {stock['ticker']} ({stock.get('source')}); "
+                f"auto-buy is on for {', '.join(allowed) or 'no bot'} "
+                "(AUTO_BUY_BOTS). Use the dashboard Buy button."
+            )
+    picks = [stock for stock in picks if stock.get("source") in allowed]
     if not picks:
         print("No slot picks to buy.")
         return

@@ -141,7 +141,9 @@ The three bots:
 - **How:**
   - At 8:45 AM Central `auto_trader.py` buys the slot picks with market
     orders. A pick is skipped when the price is more than 0.5 ATR above the
-    scan price (`MAX_GAP_ATR`; the planned entry is gone).
+    scan price (`MAX_GAP_ATR`; the planned entry is gone). Only the bots
+    in `AUTO_BUY_BOTS` are bought automatically (now Bot 1 only,
+    2026-11-04); the others by hand.
   - Once a buy fills, the stop and targets are set from the **real fill
     price**. Bot 1 / Bot 2: two OCO sell orders at Alpaca (good till
     canceled): half the shares at 2R, the rest at 2.5R, each with a stop
@@ -319,6 +321,28 @@ time. The exact final one-trade-per-week strategy has **not** been backtested.
 ---
 
 ## 5. Activity Log (newest first)
+
+### 2026-11-04 — Automatic buys from Bot 1 only
+
+**What:** New `.env` setting `AUTO_BUY_BOTS` (comma-separated `A_PLUS`,
+`PULLBACK`, `MOMENTUM`; empty = all three). Set to `A_PLUS`: the 8:45 AM
+run buys only Bot 1 picks. Bot 2 and Bot 3 still scan, list their stocks
+and get slot picks, but the run prints "Not bought automatically" for them;
+they are bought by hand with the dashboard Buy button. Their open trades
+(MPC, FTNT, REGN) keep their stops, targets, trailing stop and earnings
+exit as before. The dashboard shows "auto-buy: Bot 1" in the status line,
+and a Bot 2 / Bot 3 next pick reads "not bought automatically; use Buy".
+
+**Why:** The user wants pick quality: only Bot 1's strict A+ picks are
+bought without a look first. Bot 2's #1 pick is ranked only by 6-month
+return (MPC with earnings in 2 days, FTNT after bad news).
+
+**How:** `broker.auto_buy_bots()` (unknown names are refused),
+`auto_trader.buy_picks` filters by it, `app._broker_state` sends
+`auto_buy_bots` to `web/dashboard.html`, `.env.example`. Tests: new auto-buy
+filter and setting tests in `tests/test_auto_trading.py` (282 pass). Note:
+Bot 1 rarely finds a trade, so far fewer automatic buys; more idle cash goes
+to SPY parking. Restart `Start TradingBot.bat` for the dashboard text.
 
 ### 2026-11-03 — Missed morning buy; MPC kept through earnings
 

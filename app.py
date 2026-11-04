@@ -38,6 +38,8 @@ from shadow_exits import get_shadow_comparison
 from market_clock import is_current, stale_message
 from slot_selector import SOURCE_A_PLUS, SOURCE_MOMENTUM, SOURCE_PULLBACK, max_open_trades
 from broker import (
+    ALL_BOTS,
+    auto_buy_bots,
     auto_trading_status,
     get_trading_client,
     latest_price,
@@ -623,9 +625,15 @@ def _broker_state(errors):
         pending = get_pending_broker_orders()
     except (OSError, sqlite3.Error):
         pending = []
+    try:
+        auto_bots = auto_buy_bots()
+    except RuntimeError as exc:
+        errors.append({"source": ".env", "message": str(exc)})
+        auto_bots = list(ALL_BOTS)
     return {
         "enabled": enabled,
         "reason": reason,
+        "auto_buy_bots": auto_bots,
         "pending_orders": pending,
         "parking": _last_parking if enabled else None,
     }

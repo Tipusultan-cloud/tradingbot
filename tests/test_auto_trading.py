@@ -640,7 +640,7 @@ class AutoTraderTests(JournalCase):
             self.assertEqual(auto_trader.main([]), 0)
         client.assert_not_called()
 
-    def test_buys_slot_picks(self):
+    def run_morning(self, auto_buy_bots):
         slots = Path(self.folder.name) / "slots.json"
         slots.write_text(json.dumps({
             "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -651,6 +651,7 @@ class AutoTraderTests(JournalCase):
         }))
         with (
             patch.object(auto_trader, "auto_trading_status", return_value=(True, "on")),
+            patch.object(auto_trader, "auto_buy_bots", return_value=auto_buy_bots),
             patch.object(auto_trader, "get_trading_client", return_value=self.client),
             patch.object(auto_trader, "latest_price", lambda ticker: 200.0),
             patch.object(auto_trader, "SLOT_SELECTION_JSON", slots),
@@ -660,11 +661,36 @@ class AutoTraderTests(JournalCase):
         ):
             self.assertEqual(auto_trader.main([]), 0)
 
+    def test_buys_slot_picks(self):
+        self.run_morning(["A_PLUS", "PULLBACK", "MOMENTUM"])
         self.assertEqual(
             [r.symbol for r in self.client.submitted], ["HCA", "MRNA"]
         )
         pending = get_pending_broker_orders(self.database)
         self.assertEqual([p["entry_source"] for p in pending], ["AUTO", "AUTO"])
+
+    def test_buys_only_the_auto_buy_bots(self):
+        self.run_morning(["A_PLUS"])
+        self.assertEqual([r.symbol for r in self.client.submitted], ["HCA"])
+
+
+class AutoBuyBotsSettingTests(unittest.TestCase):
+    def setting(self, value):
+        with (
+            patch.object(broker, "load_dotenv"),
+            patch.dict(os.environ, {"AUTO_BUY_BOTS": value}),
+        ):
+            return broker.auto_buy_bots()
+
+    def test_unset_means_all_bots(self):
+        self.assertEqual(self.setting(""), ["A_PLUS", "PULLBACK", "MOMENTUM"])
+
+    def test_list_is_read_in_bot_order(self):
+        self.assertEqual(self.setting("momentum, a_plus"), ["A_PLUS", "MOMENTUM"])
+
+    def test_unknown_bot_is_refused(self):
+        with self.assertRaises(RuntimeError):
+            self.setting("A_PLUS,BOT4")
 
 
 def daily_bars(closes, start="2026-10-29", atr=2.0):

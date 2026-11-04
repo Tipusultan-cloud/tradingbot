@@ -1035,7 +1035,8 @@
         } else if (pick) {
           const risk = pick.risk_preview || {};
           const text = el("span");
-          text.append(el("strong", "", pick.ticker), document.createTextNode(` · ${risk.shares ?? "?"} shares near ${money(risk.entry_reference)} · bought automatically at the next run`));
+          const auto = buying.autoBots.includes(source);
+          text.append(el("strong", "", pick.ticker), document.createTextNode(` · ${risk.shares ?? "?"} shares near ${money(risk.entry_reference)} · ${auto ? "bought automatically at the next run" : "not bought automatically; use Buy if you want it"}`));
           box.append(avatar(pick.ticker, true), text);
         } else if (source === "MOMENTUM" ? bot3Full : mainFull) {
           box.appendChild(el("span", "", source === "MOMENTUM"
@@ -1636,13 +1637,14 @@
         const bot3Busy = inUse.filter((item) => item.strategy === "MOMENTUM").length;
         const buying = {
           enabled: broker.enabled === true,
+          autoBots: broker.auto_buy_bots || ["A_PLUS", "PULLBACK", "MOMENTUM"],
           busy,
           slotsFull: inUse.length - bot3Busy >= maxSlots,
           bot3Full: bot3Busy >= momentumSlots,
         };
         const brokerNote = byId("broker-note");
         brokerNote.textContent = broker.enabled
-          ? `● Auto trading ON · Alpaca paper${pending.length ? ` · ${pending.length} order(s) waiting` : ""}`
+          ? `● Auto trading ON · Alpaca paper${buying.autoBots.length < 3 ? ` · auto-buy: ${buying.autoBots.map((s) => ({ A_PLUS: "Bot 1", PULLBACK: "Bot 2", MOMENTUM: "Bot 3" })[s]).join(", ") || "none"}` : ""}${pending.length ? ` · ${pending.length} order(s) waiting` : ""}`
           : `Auto trading OFF · ${broker.reason || "not configured"}`;
         brokerNote.className = `tag ${broker.enabled ? "good" : "held"}`;
 
