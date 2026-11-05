@@ -12,6 +12,8 @@ from project_paths import DATA_DIR
 
 DEFAULT_JOURNAL_PATH = DATA_DIR / "paper_trades.sqlite3"
 PAPER_TRADES_CSV = DATA_DIR / "paper_trades.csv"
+# One dated copy of the trade CSV per day (save_daily_copy).
+TRADE_HISTORY_DIR = DATA_DIR / "trade_history"
 DUPLICATE_WINDOW_SECONDS = 60
 TRADE_CSV_FIELDS = (
     "id",
@@ -239,18 +241,10 @@ def export_paper_trades_csv(database_path=None, export_path=None):
     try:
         export_path.parent.mkdir(parents=True, exist_ok=True)
         with _connection(database_path) as connection:
+            # Every CSV column (sector and the notes were left out before
+            # 2026-11-05, so they were always blank).
             trades = connection.execute(
-                """
-                SELECT id, ticker, entry_time, entry_price, atr, shares,
-                       stop_price, target_price, setup_score, status,
-                       exit_time, exit_price, realized_pnl, exit_reason,
-                       strategy, entry_source, broker_order_id,
-                       target2_price, active_stop_price, partial_shares,
-                       partial_exit_price, partial_exit_time,
-                       half_order_id, rest_order_id
-                FROM paper_trades
-                ORDER BY id
-                """
+                f"SELECT {', '.join(TRADE_CSV_FIELDS)} FROM paper_trades ORDER BY id"
             ).fetchall()
         with tempfile.NamedTemporaryFile(
             mode="w",
@@ -280,6 +274,28 @@ def export_paper_trades_csv(database_path=None, export_path=None):
             f"could not be updated at {export_path}"
         ) from exc
     return export_path
+
+
+def save_daily_copy(database_path=None, history_dir=None, today=None):
+    """Copy every trade to TRADE_HISTORY_DIR/paper_trades_YYYY-MM-DD.csv.
+
+    One file per day; earlier days are never changed, so the trade record
+    survives even if the journal is damaged later. Today's file is rewritten
+    by each run of the day. Returns the path.
+    """
+    from datetime import date
+
+    if history_dir is None:
+        journal = _database_path(database_path)
+        # A test or other journal keeps its copies next to itself.
+        history_dir = (
+            TRADE_HISTORY_DIR if journal == DEFAULT_JOURNAL_PATH
+            else journal.parent / "trade_history"
+        )
+    history_dir = Path(history_dir)
+    day = today or date.today()
+    path = history_dir / f"paper_trades_{day.isoformat()}.csv"
+    return export_paper_trades_csv(database_path, path)
 
 
 def record_entry(

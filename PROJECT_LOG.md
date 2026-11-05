@@ -325,6 +325,67 @@ time. The exact final one-trade-per-week strategy has **not** been backtested.
 
 ## 5. Activity Log (newest first)
 
+### 2026-11-05 — Automatic trade notes; full trade CSV with a daily copy
+
+**What:**
+- **Lesson written automatically** when a trade closes (new
+  `trade_lessons.py`, run after every `auto_trader.py` sync): result in R
+  and $, sessions held, why it closed, best and worst close in R, SPY over
+  the same days, an earnings date inside the trade, a gap past the stop,
+  and one "Takeaway" picked from those facts. Starts with "Auto:". Only
+  trades without a lesson are filled in; a hand-written lesson is never
+  replaced. If prices can't be loaded it retries, and after 5 days writes
+  the lesson from the journal alone. MPC filled in: "Lost 1.01R ($-87.21)
+  in 3 sessions: the stop was hit … SPY -2.0% over the same days (MPC
+  -6.5%). Earnings came out on Nov 03 during the trade. Takeaway: holding
+  through earnings cost this trade …".
+- **Why** (entry note) now also records "bought by hand" and the warnings
+  on the list at the buy ("warnings: Earnings in 2d, Bad news" or "no
+  warnings").
+- **CSV bug fixed:** the export left out sector and both notes, so those
+  columns were always blank. `data/paper_trades.csv` now has every column.
+- **Daily copy:** each sync saves `data/trade_history/paper_trades_<date>.csv`
+  (one per day, earlier days never changed; synced by OneDrive and in the
+  backup zip; not in git).
+
+**Why:** The user wants every trade recorded with why it was taken and
+what it taught, without writing notes by hand, and was worried records
+could be deleted (they are not: the journal never deletes trades).
+
+**How:** `trade_lessons.py`, `paper_journal.py` (`save_daily_copy`,
+`TRADE_HISTORY_DIR`, export of all `TRADE_CSV_FIELDS`), `trade_manager.py`
+(`entry_reason`), `auto_trader.py` (`write_records`), `.gitignore`. Tests:
+new `tests/test_trade_lessons.py` (312 pass). Dashboard restarted.
+
+### 2026-11-05 — Dashboard split into pages; dashboard server was running old code
+
+**What:**
+- The top menu now switches between five pages instead of one long
+  scroll: **Overview** (P/L, market regime, trade slots, open positions,
+  bot activity), **Bots** (the three bot cards are the bot picker, the
+  scan funnel, then the chosen bot's next pick and list), **Market**
+  (sectors, qualified setups), **History** (report card, closed trades,
+  exit comparison), **System** (pipeline freshness, notes). The last page
+  and bot are remembered in the browser; old links (`#positions`, `#bot3`)
+  still work. Problems from System show as a red count on the menu and a
+  banner at the top of Overview. On phones and tablets the menu is a row
+  under the logo (it was hidden below 1080 px).
+- Found: the dashboard server had run since **2026-10-30**, so it showed
+  and synced with code from before Bot 3, the split exit and everything
+  since (Momentum scan showed "missing"; likely why REGN had no stop on
+  2026-11-02). `start_tradingbot.ps1` skipped a server that was "already
+  running", so restarting `Start TradingBot.bat` never loaded new code.
+  Now it stops the running API and dashboard first. Dashboard restarted
+  by hand at 1:40 AM: all scans current, no errors.
+
+**Why:** The user found the dashboard messy and asked for it to be better
+organized.
+
+**How:** `web/dashboard.html` (page wrappers, `showPage` / `route`,
+bot-card picker, `nav-system-badge`, `attention` banner, mobile menu CSS),
+`scripts/start_tradingbot.ps1` (`Stop-AppServer`). Checked with headless
+Edge at 1440 px and in 390 px frames. 297 tests pass.
+
 ### 2026-11-05 — Watchdog for missed runs and missing stops; tasks reinstalled
 
 **What:**

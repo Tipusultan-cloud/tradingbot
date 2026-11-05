@@ -80,7 +80,7 @@ class SectorLimitTests(JournalCase):
         trade = self.sync()["filled"][0]
         self.assertEqual(trade["sector"], "Energy")
         self.assertEqual(
-            trade["entry_note"], "Bot 2 leader pullback · 6-month +40.0% · 5-day -6.0% · Energy"
+            trade["entry_note"], "Bot 2 leader pullback · 6-month +40.0% · 5-day -6.0% · Energy · no warnings"
         )
         self.assertEqual(held_sectors(self.database), {"Energy": ["ABC"]})
 

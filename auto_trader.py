@@ -19,7 +19,8 @@ import time
 from broker import auto_buy_bots, auto_trading_status, get_trading_client, latest_price
 from cash_parking import rebalance
 from earnings_calendar import check_earnings
-from paper_journal import get_pending_broker_orders
+from paper_journal import get_pending_broker_orders, save_daily_copy
+from trade_lessons import fill_missing_lessons
 from shadow_exits import fetch_daily_bars
 from project_paths import SLOT_SELECTION_JSON
 from risk_guard import trading_pause
@@ -85,6 +86,7 @@ def main(argv=None):
     print_sync(sync(client, latest_price))
     for message in update_trailing_stops(client, fetch_daily_bars):
         print(message)
+    write_records()
     if "--sync" in argv:
         return 0
 
@@ -94,6 +96,20 @@ def main(argv=None):
     buy_picks(client)
     park_cash(client)
     return 0
+
+
+def write_records():
+    """Lesson notes for newly closed trades, then today's dated copy of the
+    trade record (data/trade_history/). Neither stops the run."""
+    try:
+        for ticker, text in fill_missing_lessons():
+            print(f"LESSON {ticker}: {text}")
+    except Exception as exc:  # journal or data errors
+        print(f"Lesson notes failed, will retry next run: {exc}")
+    try:
+        print(f"Trade record saved: {save_daily_copy()}")
+    except Exception as exc:  # disk errors
+        print(f"Daily trade record copy failed: {exc}")
 
 
 def park_cash(client):

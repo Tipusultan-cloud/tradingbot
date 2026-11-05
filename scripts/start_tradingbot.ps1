@@ -26,13 +26,29 @@ Write-Host "STARTING TRADINGBOT MACHINE" -ForegroundColor Cyan
 Write-Host "=====================================" -ForegroundColor Cyan
 Write-Host ""
 
+# A server left running keeps its old code: the dashboard ran code from
+# 2026-10-30 until 2026-11-05 because this script skipped it. Stop the
+# running copy so every start loads the current code.
+function Stop-AppServer([string]$AppName) {
+    $running = Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
+        Where-Object { $_.CommandLine -like "*uvicorn app:$AppName *" }
+    foreach ($process in $running) {
+        Stop-Process -Id $process.ProcessId -Force -Confirm:$false -ErrorAction SilentlyContinue
+    }
+    if ($running) {
+        Write-Host "Stopped the running $AppName so it restarts with the current code." -ForegroundColor Yellow
+        Start-Sleep -Seconds 2
+    }
+}
+
 # ------------------------------------------------------------
 # 1. FASTAPI SERVER
 # ------------------------------------------------------------
+Stop-AppServer "app"
 $port8000 = Get-NetTCPConnection -LocalPort $ApiPort -State Listen -ErrorAction SilentlyContinue
 
 if ($port8000) {
-    Write-Host "Webhook API: already running on port $ApiPort" -ForegroundColor Green
+    Write-Host "Port $ApiPort is used by another program; the webhook API was not started." -ForegroundColor Red
 }
 else {
     Write-Host "Starting webhook API..." -ForegroundColor Yellow
@@ -54,10 +70,11 @@ Set-Location '$ProjectDir'
 # ------------------------------------------------------------
 # 2. LOCAL OPERATOR DASHBOARD
 # ------------------------------------------------------------
+Stop-AppServer "dashboard_app"
 $dashboardListener = Get-NetTCPConnection -LocalPort $DashboardPort -State Listen -ErrorAction SilentlyContinue
 
 if ($dashboardListener) {
-    Write-Host "Dashboard: already running on http://127.0.0.1:$DashboardPort" -ForegroundColor Green
+    Write-Host "Port $DashboardPort is used by another program; the dashboard was not started." -ForegroundColor Red
 }
 else {
     Write-Host "Starting local operator dashboard..." -ForegroundColor Yellow

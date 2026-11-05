@@ -70,6 +70,21 @@
     .nav { display: flex; gap: 2px; margin-left: 12px; }
     .nav a { color: var(--text-2); text-decoration: none; font-size: 13px; font-weight: 500; padding: 8px 12px; border-radius: 10px; transition: background .2s, color .2s; }
     .nav a:hover { background: var(--glass); color: var(--text); }
+    .nav a[aria-current="page"] { background: rgba(255,255,255,.09); color: var(--text); box-shadow: 0 1px 0 rgba(255,255,255,.08) inset; }
+    .nav-badge { display: inline-block; min-width: 18px; margin-left: 6px; padding: 0 5px; border-radius: 999px; background: var(--bad); color: #fff; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; }
+    .nav-badge[hidden] { display: none; }
+    .page[hidden] { display: none; }
+    .page > .page-title:first-child { margin-top: 8px; }
+    .page > .grid-hero:first-child { margin-top: 0; }
+    .attention { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 18px; padding: 12px 16px; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--bad) 45%, transparent); background: color-mix(in srgb, var(--bad) 10%, transparent); color: var(--text); font-size: 13px; }
+    .attention[hidden] { display: none; }
+    .attention a { color: var(--text); font-weight: 600; white-space: nowrap; }
+    /* The bot cards are the bot picker; the old tab row stays for its counts only. */
+    .page[data-page="bots"] .tabs { display: none; }
+    .page[data-page="bots"] .bots-row { margin-bottom: 18px; }
+    .page[data-page="bots"] .funnel { margin-bottom: 18px; }
+    .bot-card[aria-selected="true"] { border-color: color-mix(in srgb, var(--bot) 70%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--bot) 45%, transparent), 0 20px 50px -20px rgba(0,0,0,.6); }
+    .bot-card[aria-selected="true"] .open-hint { opacity: 1; color: var(--bot); }
     .top-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
     .status-pill { display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--glass); font-size: 12px; color: var(--text-2); white-space: nowrap; }
     .pulse { position: relative; width: 8px; height: 8px; border-radius: 50%; background: var(--good); }
@@ -325,7 +340,9 @@
     footer { display: flex; justify-content: space-between; gap: 16px; margin-top: 44px; padding-top: 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; line-height: 1.6; }
 
     @media (max-width: 1080px) {
-      .nav { display: none; }
+      .topbar-inner { flex-wrap: wrap; height: auto; padding: 10px 0 0; row-gap: 6px; }
+      .nav { order: 3; width: 100%; margin: 0; overflow-x: auto; padding-bottom: 8px; }
+      .nav a { flex: 1; text-align: center; white-space: nowrap; }
       .grid-hero, .grid-intel, .grid-2 { grid-template-columns: 1fr; }
       .funnel { grid-template-columns: repeat(3, minmax(0, 1fr)); }
       .step + .step::before { display: none; }
@@ -433,7 +450,7 @@
         <span class="brand-name">SultanQuant<small>My own trading engine · 3 bots</small></span>
       </a>
       <nav class="nav" aria-label="Sections">
-        <a href="#overview">Overview</a><a href="#positions">Positions</a><a href="#bots">Bots</a><a href="#market">Market</a><a href="#history">History</a><a href="#system">System</a>
+        <a href="#overview" data-page="overview">Overview</a><a href="#bots" data-page="bots">Bots</a><a href="#market" data-page="market">Market</a><a href="#history" data-page="history">History</a><a href="#system" data-page="system">System<span id="nav-system-badge" class="nav-badge" hidden></span></a>
       </nav>
       <div class="top-right">
         <span class="clock" title="Central time (regular session 8:30–15:00 CT, Mon–Fri)"><b id="ct-clock">--:--:--</b><span id="ct-label">Central</span></span>
@@ -448,8 +465,9 @@
   </header>
 
   <main class="shell">
-    <!-- Overview -->
-    <section id="overview" class="grid-hero">
+    <!-- Page 1: Overview - money, open trades, what the bots did -->
+    <div id="page-overview" class="page" data-page="overview">
+    <section class="grid-hero">
       <article class="card hero fade-in">
         <div class="greeting"><span id="greeting">Hello</span>, <strong>Sultan</strong> · <span id="refresh-time">loading latest scan…</span></div>
         <div class="hero-label">Open profit / loss · live</div>
@@ -474,7 +492,58 @@
       </div>
     </section>
 
-    <section class="card funnel fade-in" style="animation-delay:.18s" aria-label="Today's scan funnel">
+
+
+    <div id="attention" class="attention" hidden></div>
+
+    <div id="positions" class="section-title">
+      <div><h2>Open positions</h2><p id="open-position-summary">Bot 1 / Bot 2: half sells at 2R (then the stop moves to entry), the rest at 2.5R, or after 20 days. Bot 3: rides with a trailing stop, no target.</p></div>
+      <span id="broker-note" class="tag">Checking auto trading…</span>
+    </div>
+    <section id="positions-grid" class="positions"></section>
+
+    <div class="section-title">
+      <div><h2>Bot activity</h2><p>Buys, sales and scans, latest first.</p></div>
+    </div>
+      <article class="card feed-card">
+                <div id="activity-feed" class="card-body feed"></div>
+      </article>
+    </div>
+
+    <!-- Page 2: Bots - status, today's scan, each bot's list -->
+    <div id="page-bots" class="page" data-page="bots" hidden>
+    <div class="section-title page-title">
+      <div><h2>Bots</h2><p>Pick a bot to see its next pick and every stock it would buy. Only Bot 1 buys automatically; Buy lets you pick by hand.</p></div>
+      <div class="tabs" role="tablist" aria-label="Bot lists">
+        <button class="tab" role="tab" id="tab-bot1" style="--tab-color: var(--gold)" aria-controls="panel-bot1" aria-selected="false" data-bot="bot1"><span class="chip-dot" style="background:var(--gold)"></span>Bot 1<span class="tab-extra"> · A+</span><span id="bot1-count" class="count">0</span></button>
+        <button class="tab" role="tab" id="tab-bot2" style="--tab-color: var(--violet)" aria-controls="panel-bot2" aria-selected="true" data-bot="bot2"><span class="chip-dot" style="background:var(--violet)"></span>Bot 2<span class="tab-extra"> · Pullback</span><span id="bot2-count" class="count">0</span></button>
+        <button class="tab" role="tab" id="tab-bot3" style="--tab-color: var(--rose)" aria-controls="panel-bot3" aria-selected="false" data-bot="bot3"><span class="chip-dot" style="background:var(--rose)"></span>Bot 3<span class="tab-extra"> · Momentum</span><span id="bot3-count" class="count">0</span></button>
+      </div>
+    </div>
+    <section class="bots-row">
+      <article class="card bot-card fade-in" data-bot="bot1" role="button" tabindex="0" aria-label="Open the Bot 1 list" style="--bot: var(--gold); animation-delay:.22s">
+        <div class="bot-head"><div id="bot1-radar" class="radar idle"></div><div><div class="bot-title">Bot 1 · A+ Hunter</div><div class="bot-role">Buys strength when everything lines up</div></div></div>
+        <div id="bot1-state" class="bot-state idle"><span class="pulse"></span><span>Starting…</span></div>
+        <div id="bot1-line" class="bot-line"></div>
+        <div id="bot1-mini" class="bot-mini"></div>
+        <div class="open-hint">Show its list ↓</div>
+      </article>
+      <article class="card bot-card fade-in" data-bot="bot2" role="button" tabindex="0" aria-label="Open the Bot 2 list" style="--bot: var(--violet); animation-delay:.28s">
+        <div class="bot-head"><div id="bot2-radar" class="radar idle"></div><div><div class="bot-title">Bot 2 · Dip Buyer</div><div class="bot-role">Buys market leaders on a pullback</div></div></div>
+        <div id="bot2-state" class="bot-state idle"><span class="pulse"></span><span>Starting…</span></div>
+        <div id="bot2-line" class="bot-line"></div>
+        <div id="bot2-mini" class="bot-mini"></div>
+        <div class="open-hint">Show its list ↓</div>
+      </article>
+      <article class="card bot-card fade-in" data-bot="bot3" role="button" tabindex="0" aria-label="Open the Bot 3 momentum list" style="--bot: var(--rose); animation-delay:.34s">
+        <div class="bot-head"><div id="bot3-radar" class="radar idle"></div><div><div class="bot-title">Bot 3 · Momentum Rider</div><div class="bot-role">Rides big jumps with a trailing stop</div></div></div>
+        <div id="bot3-state" class="bot-state idle"><span class="pulse"></span><span>Starting…</span></div>
+        <div id="bot3-line" class="bot-line"></div>
+        <div id="bot3-mini" class="bot-mini"></div>
+        <div class="open-hint">Show its list ↓</div>
+      </article>
+    </section>
+    <section class="card funnel" aria-label="Today's scan funnel">
       <div class="step"><div class="step-label">Universe</div><div id="universe-count" class="step-value">—</div><div class="step-note">stocks watched</div></div>
       <div class="step"><div class="step-label">Technical scan</div><div id="technical-count" class="step-value">—</div><div class="step-note">passed 4/4</div></div>
       <div class="step"><div class="step-label">Top-down scan</div><div id="topdown-count" class="step-value">—</div><div class="step-note">market + sector OK</div></div>
@@ -482,51 +551,6 @@
       <div class="step"><div class="step-label">Bot 2 · Pullbacks</div><div id="pullback-count" class="step-value">—</div><div class="step-note">leaders down &gt;5%</div></div>
       <div class="step"><div class="step-label">Bot 3 · Jumps</div><div id="momentum-count" class="step-value">—</div><div class="step-note">+5% on 3× volume</div></div>
     </section>
-
-    <section class="bots-row">
-      <article class="card bot-card fade-in" data-bot="bot1" role="button" tabindex="0" aria-label="Open the Bot 1 list" style="--bot: var(--gold); animation-delay:.22s">
-        <div class="bot-head"><div id="bot1-radar" class="radar idle"></div><div><div class="bot-title">Bot 1 · A+ Hunter</div><div class="bot-role">Buys strength when everything lines up</div></div></div>
-        <div id="bot1-state" class="bot-state idle"><span class="pulse"></span><span>Starting…</span></div>
-        <div id="bot1-line" class="bot-line"></div>
-        <div id="bot1-mini" class="bot-mini"></div>
-        <div class="open-hint">View list →</div>
-      </article>
-      <article class="card bot-card fade-in" data-bot="bot2" role="button" tabindex="0" aria-label="Open the Bot 2 list" style="--bot: var(--violet); animation-delay:.28s">
-        <div class="bot-head"><div id="bot2-radar" class="radar idle"></div><div><div class="bot-title">Bot 2 · Dip Buyer</div><div class="bot-role">Buys market leaders on a pullback</div></div></div>
-        <div id="bot2-state" class="bot-state idle"><span class="pulse"></span><span>Starting…</span></div>
-        <div id="bot2-line" class="bot-line"></div>
-        <div id="bot2-mini" class="bot-mini"></div>
-        <div class="open-hint">View list →</div>
-      </article>
-      <article class="card bot-card fade-in" data-bot="bot3" role="button" tabindex="0" aria-label="Open the Bot 3 momentum list" style="--bot: var(--rose); animation-delay:.34s">
-        <div class="bot-head"><div id="bot3-radar" class="radar idle"></div><div><div class="bot-title">Bot 3 · Momentum Rider</div><div class="bot-role">Rides big jumps with a trailing stop</div></div></div>
-        <div id="bot3-state" class="bot-state idle"><span class="pulse"></span><span>Starting…</span></div>
-        <div id="bot3-line" class="bot-line"></div>
-        <div id="bot3-mini" class="bot-mini"></div>
-        <div class="open-hint">View list →</div>
-      </article>
-      <article class="card feed-card fade-in" style="animation-delay:.4s">
-        <div class="card-head"><h3>Bot activity</h3><span class="hint">latest first</span></div>
-        <div id="activity-feed" class="card-body feed"></div>
-      </article>
-    </section>
-
-    <!-- Positions -->
-    <div id="positions" class="section-title">
-      <div><h2>Open positions</h2><p id="open-position-summary">Bot 1 / Bot 2: half sells at 2R (then the stop moves to entry), the rest at 2.5R, or after 20 days. Bot 3: rides with a trailing stop, no target.</p></div>
-      <span id="broker-note" class="tag">Checking auto trading…</span>
-    </div>
-    <section id="positions-grid" class="positions"></section>
-
-    <!-- Bots -->
-    <div id="bots" class="section-title">
-      <div><h2>Today's stock lists</h2><p>Pick a bot to see only its area: its next pick and every stock it would buy. Buy lets you pick by hand.</p></div>
-      <div class="tabs" role="tablist" aria-label="Bot lists">
-        <button class="tab" role="tab" id="tab-bot1" style="--tab-color: var(--gold)" aria-controls="panel-bot1" aria-selected="false" data-bot="bot1"><span class="chip-dot" style="background:var(--gold)"></span>Bot 1<span class="tab-extra"> · A+</span><span id="bot1-count" class="count">0</span></button>
-        <button class="tab" role="tab" id="tab-bot2" style="--tab-color: var(--violet)" aria-controls="panel-bot2" aria-selected="true" data-bot="bot2"><span class="chip-dot" style="background:var(--violet)"></span>Bot 2<span class="tab-extra"> · Pullback</span><span id="bot2-count" class="count">0</span></button>
-        <button class="tab" role="tab" id="tab-bot3" style="--tab-color: var(--rose)" aria-controls="panel-bot3" aria-selected="false" data-bot="bot3"><span class="chip-dot" style="background:var(--rose)"></span>Bot 3<span class="tab-extra"> · Momentum</span><span id="bot3-count" class="count">0</span></button>
-      </div>
-    </div>
     <section id="panel-bot1" class="bot-panel" role="tabpanel" aria-labelledby="tab-bot1" style="--bot: var(--gold)" hidden>
       <article class="card bot-area">
         <div class="area-head"><div class="radar" aria-hidden="true"></div><div><h3>Bot 1 · A+ Hunter</h3><p><strong>Buy strength.</strong> Stocks passing every A+ rule: both scanners 4/4, bullish market and sector, score ≥ 95, strong volume, beating sector and SPY, no bad news.</p></div></div>
@@ -561,10 +585,11 @@
         </div>
       </article>
     </section>
+    </div>
 
-
-    <!-- Market -->
-    <div id="market" class="section-title">
+    <!-- Page 3: Market -->
+    <div id="page-market" class="page" data-page="market" hidden>
+    <div class="section-title page-title">
       <div><h2>Market intelligence</h2><p>Where the strength is. Sectors are ranked by their 20-day return against SPY.</p></div>
     </div>
     <section class="grid-intel">
@@ -585,8 +610,11 @@
       </article>
     </section>
 
-    <!-- History -->
-    <div id="history" class="section-title">
+    </div>
+
+    <!-- Page 4: History - report card, closed trades, exit comparison -->
+    <div id="page-history" class="page" data-page="history" hidden>
+    <div class="section-title page-title">
       <div><h2>Trade history</h2><p id="journal-summary">Paper trades only.</p></div>
       <a class="btn btn-ghost" href="/api/paper-trades.csv"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>Download all trades (CSV)</a>
     </div>
@@ -609,8 +637,11 @@
       </div>
     </section>
 
-    <!-- System -->
-    <div id="system" class="section-title">
+    </div>
+
+    <!-- Page 5: System - scheduled runs, freshness, problems -->
+    <div id="page-system" class="page" data-page="system" hidden>
+    <div class="section-title page-title">
       <div><h2>System</h2><p>Freshness of every scan step and anything that needs attention.</p></div>
     </div>
     <section class="grid-2">
@@ -626,6 +657,7 @@
         </div>
       </article>
     </section>
+    </div>
 
     <footer><span>SultanQuant · paper trading · local dashboard</span><span>Market data and scans may be delayed. Use independent risk review.</span></footer>
   </main>
@@ -1372,6 +1404,21 @@
       } else {
         notes.appendChild(el("div", "note", "✓ All expected scan outputs are readable."));
       }
+      // The System page is out of sight, so problems show on the menu and
+      // at the top of Overview too.
+      const count = errors?.length || 0;
+      const badge = byId("nav-system-badge");
+      badge.hidden = !count;
+      badge.textContent = String(count);
+      const banner = byId("attention");
+      banner.hidden = !count;
+      if (count) {
+        const first = errors[0];
+        const text = el("span", "", `⚠ ${count === 1 ? "1 thing needs" : `${count} things need`} a look · ${first.source}: ${first.message}`);
+        const link = el("a", "", "Open System →");
+        link.href = "#system";
+        banner.replaceChildren(text, link);
+      }
     }
 
     // Hero number counts from the old value to the new one.
@@ -1548,20 +1595,39 @@
       requestAnimationFrame(frame);
     }
 
-    // Bot tabs (the chosen tab is remembered in this browser only).
+    // Pages: the top menu shows one page at a time (remembered in this
+    // browser only). Old links still work: #positions opens Overview,
+    // #bot1 / #bot2 / #bot3 open that bot on the Bots page.
+    const PAGES = ["overview", "bots", "market", "history", "system"];
+    function showPage(page, { scroll = true } = {}) {
+      if (!PAGES.includes(page)) page = "overview";
+      for (const node of document.querySelectorAll(".page")) node.hidden = node.dataset.page !== page;
+      for (const link of document.querySelectorAll(".nav a[data-page]")) {
+        if (link.dataset.page === page) link.setAttribute("aria-current", "page");
+        else link.removeAttribute("aria-current");
+      }
+      try { localStorage.setItem("tradingbot-page", page); } catch (error) { /* storage blocked */ }
+      if (scroll) window.scrollTo({ top: 0 });
+    }
+
+    // Bot picker (the chosen bot is remembered in this browser only).
     function selectBot(bot) {
       for (const tab of document.querySelectorAll(".tab")) {
         const active = tab.dataset.bot === bot;
         tab.setAttribute("aria-selected", String(active));
         byId(`panel-${tab.dataset.bot}`).hidden = !active;
       }
+      for (const card of document.querySelectorAll(".bot-card[data-bot]")) {
+        card.setAttribute("aria-selected", String(card.dataset.bot === bot));
+      }
       try { localStorage.setItem("tradingbot-tab", bot); } catch (error) { /* storage blocked */ }
     }
     for (const tab of document.querySelectorAll(".tab")) tab.addEventListener("click", () => selectBot(tab.dataset.bot));
-    // Clicking a bot card at the top opens that bot's area.
-    function openBot(bot) {
+    // Clicking a bot card shows that bot's list below the cards.
+    function openBot(bot, { scroll = true } = {}) {
+      showPage("bots", { scroll: false });
       selectBot(bot);
-      byId("bots").scrollIntoView({ behavior: "smooth", block: "start" });
+      if (scroll) byId(`panel-${bot}`).scrollIntoView({ behavior: "smooth", block: "start" });
     }
     for (const card of document.querySelectorAll(".bot-card[data-bot]")) {
       card.addEventListener("click", () => openBot(card.dataset.bot));
@@ -1569,9 +1635,26 @@
         if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openBot(card.dataset.bot); }
       });
     }
-    try { const saved = localStorage.getItem("tradingbot-tab"); if (["bot1", "bot2", "bot3"].includes(saved)) selectBot(saved); } catch (error) { /* storage blocked */ }
-    // A link like /#bot3 opens that bot's area.
-    if (["#bot1", "#bot2", "#bot3"].includes(location.hash)) selectBot(location.hash.slice(1));
+
+    function route() {
+      const hash = location.hash.slice(1);
+      if (["bot1", "bot2", "bot3"].includes(hash)) return openBot(hash, { scroll: false });
+      if (hash === "positions") {
+        showPage("overview", { scroll: false });
+        return byId("positions").scrollIntoView({ block: "start" });
+      }
+      if (PAGES.includes(hash)) return showPage(hash);
+      let saved = "overview";
+      try { saved = localStorage.getItem("tradingbot-page") || saved; } catch (error) { /* storage blocked */ }
+      showPage(saved, { scroll: false });
+    }
+    window.addEventListener("hashchange", route);
+    // Clicking the menu item of the page already shown still goes to its top.
+    for (const link of document.querySelectorAll(".nav a[data-page], a.brand")) {
+      link.addEventListener("click", () => { if (link.getAttribute("href") === location.hash) window.scrollTo({ top: 0, behavior: "smooth" }); });
+    }
+    try { const saved = localStorage.getItem("tradingbot-tab"); if (["bot1", "bot2", "bot3"].includes(saved)) selectBot(saved); else selectBot("bot2"); } catch (error) { selectBot("bot2"); }
+    route();
 
     const hour = new Date().getHours();
     byId("greeting").textContent = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";

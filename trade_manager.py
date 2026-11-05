@@ -116,7 +116,7 @@ def max_gap_atr():
     return float(os.getenv("MAX_GAP_ATR", "0.5"))
 
 
-def entry_reason(stock, strategy):
+def entry_reason(stock, strategy, entry_source=None):
     """Why the bot picked the stock, saved as the trade's entry note."""
     def pct(key):
         value = stock.get(key)
@@ -140,6 +140,15 @@ def entry_reason(stock, strategy):
         ]
     if stock.get("sector"):
         parts.append(str(stock["sector"]))
+    if entry_source == SOURCE_MANUAL:
+        parts.append("bought by hand")
+    # The warnings on the list when it was bought (earnings, news), so the
+    # lesson can be read against them later.
+    labels = [
+        str(item.get("label")) for item in stock.get("warnings") or []
+        if isinstance(item, dict) and item.get("label")
+    ]
+    parts.append(f"warnings: {', '.join(labels)}" if labels else "no warnings")
     return " · ".join(str(part) for part in parts if part)
 
 
@@ -255,7 +264,7 @@ def open_trade(client, stock, strategy, entry_source, price_lookup, database_pat
         setup_score=stock.get("setup_score"),
         database_path=database_path,
         sector=stock.get("sector"),
-        entry_note=entry_reason(stock, strategy),
+        entry_note=entry_reason(stock, strategy, entry_source),
     )
     return {
         "ticker": ticker,
