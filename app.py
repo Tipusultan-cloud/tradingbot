@@ -34,6 +34,7 @@ from paper_journal import (
 )
 from risk_guard import trading_pause
 from report_card import build_report as build_report_card
+from run_health import load_status as load_run_status, run_problems
 from shadow_exits import get_shadow_comparison
 from market_clock import is_current, stale_message
 from slot_selector import SOURCE_A_PLUS, SOURCE_MOMENTUM, SOURCE_PULLBACK, max_open_trades
@@ -516,6 +517,10 @@ def get_dashboard_data():
         })
 
     broker = _broker_state(errors)
+
+    # Missed or failed scheduled runs (the watchdog emails them too).
+    for _, message in run_problems(load_run_status()):
+        errors.append({"source": "Scheduled runs", "message": message})
 
     try:
         paper_trades = get_paper_trades(limit=10)

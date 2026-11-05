@@ -213,10 +213,13 @@ The three bots:
     **TradingBot Daily Scan** at 6:00 PM runs `scheduled_daily_scan.ps1`
     (every scan stage, with a mutex so two scans never overlap), and
     **TradingBot Morning Buy** at 8:45 AM runs `scheduled_morning_buy.ps1`
-    (`auto_trader.py`). Logs go to `logs/`. Install or refresh both with
-    `Install Daily Scan Task.bat`; updating the existing scan task needs
-    **Run as administrator** (still to do as of 2026-11-02; until then it
-    runs at 7:30 AM).
+    (`auto_trader.py`), and **TradingBot Watchdog** at 9:30 AM and 8:00 PM
+    (`run_health.py check`: emails missed / failed runs and positions
+    without a stop). Logs go to `logs/`. Install or refresh all three with
+    `Install Daily Scan Task.bat` **as administrator** (done 2026-11-05).
+    **TradingBot Keep Awake** keeps the PC awake 8:00 AM - 7:00 PM on
+    trading days (the PC otherwise sleeps after 5 minutes, and its Modern
+    Standby can ignore wake timers).
   - `scan_notifications.py`: emails the result via SMTP (Gmail App Password)
     if configured in `.env`; skipped otherwise.
   - `Backup TradingBot.bat`: zip to `backups/`, excluding `.env` and `.venv`.
@@ -321,6 +324,52 @@ time. The exact final one-trade-per-week strategy has **not** been backtested.
 ---
 
 ## 5. Activity Log (newest first)
+
+### 2026-11-05 — Watchdog for missed runs and missing stops; tasks reinstalled
+
+**What:**
+- New `run_health.py`. The morning buy and evening scan record start and
+  finish in `data/run_status.json` (not in git). A failed run, or a scan
+  where a stage failed (e.g. the momentum scan), emails at once with the
+  end of its log. A new **TradingBot Watchdog** task (9:30 AM and 8:00 PM
+  weekdays, `scripts/scheduled_watchdog.ps1`) emails when the last
+  scheduled run did not run, started but never finished, or failed, and
+  when an Alpaca position (not parked SPY) has fewer shares under live stop
+  orders than it holds. Each problem is emailed once. The dashboard shows
+  the run problems under System notes ("Scheduled runs").
+- Found: the 2026-11-04 6 PM scan did not run (task result 0x800710E0, no
+  log). The Daily Scan task had no WakeToRun / StartWhenAvailable and an
+  extra 8:30 AM trigger (it ran at 9:14 that day, with the morning buy).
+  Cause of the late runs: the PC sleeps after 5 minutes idle and uses Modern
+  Standby (S0), which can ignore wake timers. The user chose to keep sleep
+  on; the watchdog reports late or missed runs.
+- `Install Daily Scan Task.bat` run as administrator: all three tasks now
+  wake, start late when missed, run on battery, hidden window; Daily Scan
+  6:00 PM only. Ran the missed scan by hand at 1:15 AM.
+- **Keep Awake** (user's choice instead of turning sleep off): new task
+  "TradingBot Keep Awake" (8:00 AM and at logon) runs
+  `scripts/keep_awake.ps1`, which keeps the PC from sleeping (screen can
+  turn off) from 8:00 AM to 7:00 PM Central on **trading days only**:
+  weekends and market holidays (Alpaca calendar,
+  `market_clock.is_trading_day`; weekdays count if Alpaca can't be asked)
+  are skipped. If the PC is already asleep at 8:00 it may still start late.
+- First real check: FTNT (old bracket, stop $120.94 "held") and REGN
+  (trailing stop) are covered. MPC closed at its stop on 2026-11-03.
+- Fixed `test_current_slots_are_shown`: it read the real momentum file and
+  failed whenever that was stale.
+
+**Why:** Item 1 of "most powerful trading station": the bot must run every
+day, and a missed run must not go unnoticed (2026-11-03 missed buy, REGN
+without a stop on 2026-11-02).
+
+**How:** `run_health.py`, `scripts/scheduled_morning_buy.ps1`,
+`scripts/scheduled_daily_scan.ps1` (`Add-Problem`; the email step failing
+no longer ends the run), `scripts/scheduled_watchdog.ps1`,
+`scripts/install_daily_task.ps1`, `app.py`, `.gitignore`. Alpaca's "open"
+order list leaves out a held bracket stop leg, so the stop check reads all
+orders of the held stocks with their legs. Tests: new
+`tests/test_run_health.py` (295 pass). Limit: a PC that is off sends
+nothing; the watchdog reports when it is back.
 
 ### 2026-11-04 — Automatic buys from Bot 1 only
 

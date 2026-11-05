@@ -20,3 +20,5 @@ infra/terraform/tfplan
 infra/terraform/crash.log
 infra/terraform/crash.*.log
 results/backtests/*.pkl
+data/run_status.json
+data/run_status.tmp

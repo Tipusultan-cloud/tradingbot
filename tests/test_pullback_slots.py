@@ -617,6 +617,7 @@ class DashboardSlotTests(unittest.TestCase):
             "master": {"generated_at": now, "best_current": None, "approved": []},
             "best": {"generated_at": now, "status": "WAIT"},
             "pullback": {"generated_at": now, "qualified_count": 3, "qualified": []},
+            "momentum": {"generated_at": now, "qualified": []},
             "slots": {
                 "generated_at": slots_generated_at,
                 "status": "SLOTS TO FILL",
@@ -633,6 +634,7 @@ class DashboardSlotTests(unittest.TestCase):
             "master": "MASTER_CANDIDATES_JSON",
             "best": "BEST_CURRENT_CANDIDATE_JSON",
             "pullback": "PULLBACK_SETUPS_JSON",
+            "momentum": "MOMENTUM_SETUPS_JSON",
             "slots": "SLOT_SELECTION_JSON",
         }
         empty_journal = {

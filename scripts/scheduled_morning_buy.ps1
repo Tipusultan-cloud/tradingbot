@@ -16,6 +16,10 @@ Set-Location $ProjectDir
 
 Start-Transcript -Path $LogFile -Append | Out-Null
 
+# Watchdog record (run_health.py): a failure emails at once, a run that
+# never finishes is reported by the TradingBot Watchdog task.
+& $Python ".\run_health.py" start morning_buy
+
 try {
     Write-Host ""
     Write-Host "================================"
@@ -31,13 +35,25 @@ try {
 
     Write-Host ""
     Write-Host "Finished: $(Get-Date)"
+    $Result = "ok"
+    $Message = ""
 }
 catch {
     Write-Host ""
     Write-Host "MORNING BUY FAILED:"
     Write-Host $_
-    exit 1
+    $Result = "failed"
+    $Message = "$_"
 }
 finally {
     Stop-Transcript | Out-Null
+}
+
+if (-not $Result) {
+    $Result = "failed"
+    $Message = "The run stopped before it finished."
+}
+& $Python ".\run_health.py" finish morning_buy $Result $Message --log $LogFile
+if ($Result -ne "ok") {
+    exit 1
 }

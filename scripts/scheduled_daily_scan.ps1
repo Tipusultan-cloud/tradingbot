@@ -20,12 +20,24 @@ Set-Location $ProjectDir
 
 Start-Transcript -Path $LogFile -Append | Out-Null
 
+# Stages that fail but let the scan go on; emailed by run_health.py.
+$Problems = [System.Collections.Generic.List[string]]::new()
+function Add-Problem([string]$Text) {
+    Write-Warning $Text
+    $Problems.Add($Text)
+}
+
 try {
     $HasScanLock = $ScanMutex.WaitOne(0)
     if (-not $HasScanLock) {
         Write-Host "A TradingBot scan is already running; skipping this run."
+        $Skipped = $true
         exit 0
     }
+
+    # Watchdog record (run_health.py): a failure emails at once, a scan
+    # that never finishes is reported by the TradingBot Watchdog task.
+    & $Python ".\run_health.py" start daily_scan
 
     Write-Host ""
     Write-Host "================================"
@@ -57,30 +69,30 @@ try {
     # Close paper trades at stop / target / 20 days before slots are refilled.
     & $Python ".\paper_exits.py"
     if ($LASTEXITCODE -ne 0) {
-        Write-Warning "Paper exit check failed for some trades; they stay open until the next run."
+        Add-Problem "Paper exit check failed for some trades; they stay open until the next run."
     }
 
     # Record Alpaca fills and stop / target / 20-day exits (paper account).
     & $Python ".\auto_trader.py" --sync
     if ($LASTEXITCODE -ne 0) {
-        Write-Warning "Alpaca sync failed; trades are checked again on the next run."
+        Add-Problem "Alpaca sync failed; trades are checked again on the next run."
     }
 
     # A failed pullback scan leaves only the A+ pick for the slots.
     & $Python ".\scanner_pullback.py"
     if ($LASTEXITCODE -ne 0) {
-        Write-Warning "Pullback scan failed; slots will use the A+ pick only."
+        Add-Problem "Pullback scan failed; slots will use the A+ pick only."
     }
 
     # Bot 3: S&P 500 + 200 most-traded US stocks that jumped on huge volume.
     & $Python ".\scanner_momentum.py"
     if ($LASTEXITCODE -ne 0) {
-        Write-Warning "Momentum scan failed; Bot 3 buys nothing this run."
+        Add-Problem "Momentum scan failed; Bot 3 buys nothing this run."
     }
 
     & $Python ".\slot_selector.py"
     if ($LASTEXITCODE -ne 0) {
-        Write-Warning "Slot selection failed; pullback BUY alerts will be rejected."
+        Add-Problem "Slot selection failed; pullback BUY alerts will be rejected."
     }
 
     # The picks are bought by scheduled_morning_buy.ps1 at 8:45 AM Central,
@@ -90,22 +102,21 @@ try {
     Write-Host "Updating shadow exit comparison for paper trades..."
     & $Python ".\shadow_exits.py"
     if ($LASTEXITCODE -ne 0) {
-        Write-Warning "Shadow exit update failed; the scan result is unaffected."
+        Add-Problem "Shadow exit update failed; the scan result is unaffected."
     }
 
     # Weekly report card: printed every run, emailed on Fridays.
     Write-Host ""
     & $Python ".\report_card.py" --friday
     if ($LASTEXITCODE -ne 0) {
-        Write-Warning "Report card failed; the scan result is unaffected."
+        Add-Problem "Report card failed; the scan result is unaffected."
     }
 
     Write-Host ""
     Write-Host "Sending scan summary email if configured..."
     & $Python ".\scan_notifications.py"
     if ($LASTEXITCODE -ne 0) {
-        Write-Warning "Scan completed, but the email notification failed. See the error above."
-        exit 1
+        Add-Problem "Scan completed, but the email notification failed. See the error above."
     }
 
     Write-Host ""
@@ -113,12 +124,14 @@ try {
     Write-Host "DAILY SCAN COMPLETE"
     Write-Host "================================"
     Write-Host "Finished: $(Get-Date)"
+    $Result = if ($Problems.Count) { "warn" } else { "ok" }
 }
 catch {
     Write-Host ""
     Write-Host "SCAN FAILED:"
     Write-Host $_
-    exit 1
+    $Result = "failed"
+    $Problems.Insert(0, "$_")
 }
 finally {
     if ($HasScanLock) {
@@ -126,4 +139,15 @@ finally {
     }
     $ScanMutex.Dispose()
     Stop-Transcript | Out-Null
+    if (-not $Skipped) {
+        if (-not $Result) {
+            $Result = "failed"
+            $Problems.Insert(0, "The scan stopped before it finished.")
+        }
+        & $Python ".\run_health.py" finish daily_scan $Result ($Problems -join " | ") --log $LogFile
+    }
+}
+
+if ($Result -ne "ok") {
+    exit 1
 }

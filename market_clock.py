@@ -37,3 +37,30 @@ def stale_message(label, generated, now=None):
         f"{label} results are stale: {age:.1f} hours old, made before the "
         f"{cutoff:%a %b %d} close"
     )
+
+
+def is_trading_day(day=None, client=None):
+    """True when the US market opens on `day` (Central date, default
+    today), from the Alpaca calendar. Weekdays count when Alpaca cannot be
+    asked (auto trading off, no network)."""
+    day = day or datetime.now(timezone.utc).astimezone(CENTRAL).date()
+    try:
+        if client is None:
+            from broker import get_trading_client
+
+            client = get_trading_client()
+        from alpaca.trading.requests import GetCalendarRequest
+
+        days = client.get_calendar(GetCalendarRequest(start=day, end=day))
+    except Exception:  # auto trading off, network and API errors
+        return day.weekday() < 5
+    return any(getattr(item, "date", None) == day for item in days)
+
+
+if __name__ == "__main__":
+    # `python market_clock.py trading-day`: exit 0 on a trading day, else 1
+    # (used by scripts/keep_awake.ps1).
+    import sys
+
+    if sys.argv[1:] == ["trading-day"]:
+        raise SystemExit(0 if is_trading_day() else 1)
