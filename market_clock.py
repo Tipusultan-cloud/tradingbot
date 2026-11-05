@@ -1,6 +1,6 @@
 """When scan results count as current.
 
-The full scan runs each weekday evening after the close (6:00 PM
+The full scan runs each weekday evening after the close (5:30 PM
 Central) and the buy run the next morning (8:45 AM Central), see
 scripts/install_daily_task.ps1. Results are current while they were made
 after the close of the weekday before today, so Friday evening's list is

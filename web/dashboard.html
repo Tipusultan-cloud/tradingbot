@@ -214,6 +214,7 @@
     /* Buttons */
     .btn { display: inline-flex; align-items: center; gap: 7px; border: 0; border-radius: 10px; padding: 8px 14px; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; transition: transform .15s, filter .2s, box-shadow .2s; }
     .btn:active:not(:disabled) { transform: scale(.97); }
+    .not-in-plan { color: var(--muted); font-size: 11px; white-space: nowrap; cursor: help; border-bottom: 1px dotted currentColor; }
     .btn-buy { background: linear-gradient(135deg, var(--mint), var(--sky)); color: #04121c; box-shadow: 0 6px 18px -6px rgba(56,189,248,.6); }
     .btn-sell { background: linear-gradient(135deg, #ff7a88, #f0447f); color: #fff; box-shadow: 0 6px 18px -6px rgba(240,68,127,.6); }
     .btn:hover:not(:disabled) { filter: brightness(1.1); }
@@ -1060,17 +1061,24 @@
       for (const [bot, source] of [["bot1", "A_PLUS"], ["bot2", "PULLBACK"], ["bot3", "MOMENTUM"]]) {
         const box = byId(`${bot}-next`);
         box.replaceChildren(el("span", "label", "Next pick"));
-        // A pick already bought (or waiting to fill) is no longer next.
-        const pick = picks.find((stock) => stock.source === source && !busy.has(stock.ticker));
+        // A pick already bought (or waiting to fill) is no longer next. An
+        // automatic bot buys its slot pick; for the others the next pick is
+        // the 👑 plan pick from the buy plan (the only one Buy accepts).
+        const auto = buying.autoBots.includes(source);
+        const pick = auto
+          ? picks.find((stock) => stock.source === source && !busy.has(stock.ticker))
+          : (slots.bots?.[source] || []).find((stock) => stock.crown && !busy.has(stock.ticker));
+        const full = source === "MOMENTUM" ? bot3Full : mainFull;
         if (status === "STALE DATA") {
           box.appendChild(el("span", "", "Slot selection is stale. Rerun the scan before relying on it."));
-        } else if (pick) {
+        } else if (pick && !(full && !auto)) {
           const risk = pick.risk_preview || {};
           const text = el("span");
-          const auto = buying.autoBots.includes(source);
-          text.append(el("strong", "", pick.ticker), document.createTextNode(` · ${risk.shares ?? "?"} shares near ${money(risk.entry_reference)} · ${auto ? "bought automatically at the next run" : "not bought automatically; use Buy if you want it"}`));
+          text.append(el("strong", "", auto ? pick.ticker : `${pick.ticker} 👑`), document.createTextNode(` · ${risk.shares ?? "?"} shares near ${money(risk.entry_reference)} · ${auto ? "bought automatically at the next run" : "the plan pick: buy it by hand with Buy, after 8:30 AM"}`));
           box.append(avatar(pick.ticker, true), text);
-        } else if (source === "MOMENTUM" ? bot3Full : mainFull) {
+        } else if (!auto && !full && (slots.bots?.[source] || []).length) {
+          box.appendChild(el("span", "", "No plan pick: every stock has a warning or its sector is already held. Nothing to buy."));
+        } else if (full) {
           box.appendChild(el("span", "", source === "MOMENTUM"
             ? "Bot 3's slot is in use. It picks again when its trade closes."
             : "Both Bot 1 / Bot 2 slots are in use. A new stock is picked when a trade closes."));
@@ -1168,7 +1176,7 @@
         const row = document.createElement("tr");
         if (stock.crown) row.className = "crowned";
         td(row, stock.rank, "rank");
-        td(row, tickerCell(stock.crown ? `${stock.ticker} 👑` : stock.ticker, stock.crown ? "top clean pick" : stock.sector));
+        td(row, tickerCell(stock.crown ? `${stock.ticker} 👑` : stock.ticker, stock.crown ? "plan pick" : stock.sector));
         td(row, stock.source === "PULLBACK"
           ? `6M +${number(stock.return_6m, 1)}% · 5D ${number(stock.return_5d, 1)}%`
           : stock.source === "MOMENTUM"
@@ -1186,11 +1194,22 @@
           flag.title = warning.detail || "";
           flags.appendChild(flag);
         }
+        // Why it is not the plan pick, beyond its warnings (sector held, ...).
+        for (const reason of stock.plan_reasons || []) {
+          if (reason === "already held") continue;
+          flags.appendChild(el("span", "tag held", reason));
+        }
         if (!flags.childNodes.length) flags.appendChild(el("span", "tag good", "Clean"));
         td(row, flags);
         const buyCell = td(row, "");
         buyCell.textContent = "";
-        if (buying.enabled) {
+        if (buying.enabled && buying.planOnly && !stock.crown) {
+          // Hand buys follow the buy plan: only the 👑 plan pick (HAND_BUY_PLAN_ONLY).
+          const note = el("span", "not-in-plan", "Not in plan");
+          const reasons = [...(stock.warnings || []).map((w) => w.label), ...(stock.plan_reasons || [])];
+          note.title = reasons.length ? `Not in the buy plan: ${reasons.join(", ")}` : "Not in the buy plan";
+          buyCell.appendChild(note);
+        } else if (buying.enabled) {
           const button = el("button", "btn btn-buy", "Buy");
           button.type = "button";
           const busy = buying.busy.has(stock.ticker);
@@ -1721,6 +1740,7 @@
         const buying = {
           enabled: broker.enabled === true,
           autoBots: broker.auto_buy_bots || ["A_PLUS", "PULLBACK", "MOMENTUM"],
+          planOnly: broker.hand_buy_plan_only !== false,
           busy,
           slotsFull: inUse.length - bot3Busy >= maxSlots,
           bot3Full: bot3Busy >= momentumSlots,

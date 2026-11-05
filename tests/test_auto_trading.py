@@ -514,7 +514,12 @@ class DashboardBuyTests(JournalCase):
             "selections": [],
             "bots": {
                 "A_PLUS": [{"ticker": "HCA", "atr": 10.0, "setup_score": 100}],
-                "PULLBACK": [{"ticker": "VLO", "atr": 12.0}],
+                "PULLBACK": [
+                    {"ticker": "VLO", "atr": 12.0, "sector": "Energy"},
+                    {"ticker": "PSX", "atr": 8.0, "sector": "Energy"},
+                    {"ticker": "PANW", "atr": 9.0, "sector": "Information Technology",
+                     "warnings": [{"label": "Earnings in 9d"}]},
+                ],
             },
         }))
         self.patches = [
@@ -522,6 +527,8 @@ class DashboardBuyTests(JournalCase):
             patch.object(app, "auto_trading_status", return_value=(True, "on")),
             patch.object(app, "get_trading_client", return_value=self.client),
             patch.object(app, "latest_price", lambda ticker: 400.0),
+            patch.object(app, "latest_prices", lambda tickers: {}),
+            patch.object(app, "hand_buy_plan_only", return_value=True),
             patch.dict(os.environ, {"PAPER_JOURNAL_PATH": str(self.database)}),
         ]
         for item in self.patches:
@@ -534,6 +541,29 @@ class DashboardBuyTests(JournalCase):
 
     def post(self, ticker, headers=GOOD_HEADERS):
         return asyncio.run(app.dashboard_buy(FakeRequest({"ticker": ticker}, headers)))
+
+    def test_stock_outside_the_plan_is_refused(self):
+        for ticker, reason in (("PSX", "the plan pick is VLO"), ("PANW", "Earnings in 9d")):
+            with self.assertRaises(HTTPException) as caught:
+                self.post(ticker)
+            self.assertEqual(caught.exception.status_code, 409)
+            self.assertIn(f"{ticker} is not in the buy plan", caught.exception.detail)
+            self.assertIn(reason, caught.exception.detail)
+            self.assertIn("The plan pick for this bot is VLO.", caught.exception.detail)
+        self.assertEqual(self.client.submitted, [])
+
+    def test_below_stop_live_moves_the_plan_pick(self):
+        rows = json.loads(self.slots.read_text())
+        rows["bots"]["PULLBACK"][0]["risk_preview"] = {"stop": 100.0}
+        self.slots.write_text(json.dumps(rows))
+        with patch.object(app, "latest_prices", lambda tickers: {"VLO": 99.0}):
+            with self.assertRaises(HTTPException):
+                self.post("VLO")
+            self.assertEqual(self.post("PSX")["ticker"], "PSX")
+
+    def test_any_listed_stock_when_plan_only_is_off(self):
+        with patch.object(app, "hand_buy_plan_only", return_value=False):
+            self.assertEqual(self.post("PANW")["ticker"], "PANW")
 
     def test_hand_pick_from_bot_2_sends_order(self):
         result = self.post("vlo")

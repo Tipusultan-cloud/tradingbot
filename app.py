@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 from datetime import datetime, timezone
 import sqlite3
 
+import copy
 import os
 import math
 import json
@@ -42,11 +43,13 @@ from broker import (
     ALL_BOTS,
     auto_buy_bots,
     auto_trading_status,
+    hand_buy_plan_only,
     get_trading_client,
     latest_price,
     latest_prices,
 )
-from paper_journal import get_pending_broker_orders
+from paper_journal import get_pending_broker_orders, held_sectors
+from buy_plan import review_list
 from cash_parking import plan as parking_plan
 from trade_manager import SOURCE_MANUAL, TradeError, open_trade, sell_trade
 from trade_manager import sync as broker_sync
@@ -554,9 +557,10 @@ def get_dashboard_data():
         broker["enabled"],
         errors,
     )
+    held_tickers, sectors_held = _held_now()
     for rows in slot_summary["bots"].values():
         if isinstance(rows, list):
-            mark_bot_list(rows, prices)
+            mark_bot_list(rows, prices, held_tickers, sectors_held)
     paper_trades["open_pnl"] = mark_open_trades(paper_trades["open"], prices)
 
     try:
@@ -639,6 +643,7 @@ def _broker_state(errors):
         "enabled": enabled,
         "reason": reason,
         "auto_buy_bots": auto_bots,
+        "hand_buy_plan_only": hand_buy_plan_only(),
         "pending_orders": pending,
         "parking": _last_parking if enabled else None,
     }
@@ -668,14 +673,16 @@ def _live_prices_for(tickers, enabled, errors):
     return prices
 
 
-def mark_bot_list(rows, prices):
-    """Add live price and a below-stop warning; crown the top clean stock.
+def mark_bot_list(rows, prices, held_tickers=(), held_sectors=None):
+    """Add live price and a below-stop warning; crown the plan pick.
 
-    Clean means no warning from the scan (slot_selector.stock_warnings)
-    and, when a live price is known, still above the planned stop.
-    Display only: the bots' own picks follow their rank.
+    The plan pick (buy_plan.review_list) is the first stock with no
+    warning from the scan (slot_selector.stock_warnings), still above the
+    planned stop when a live price is known, not held and in a sector not
+    held. It is the only stock a dashboard Buy accepts while
+    HAND_BUY_PLAN_ONLY is on. `plan_reasons` says why another stock is not
+    in the plan. The bots' own picks follow their rank.
     """
-    crowned = False
     for stock in rows:
         if not isinstance(stock, dict):
             continue
@@ -693,9 +700,23 @@ def mark_bot_list(rows, prices):
                 ),
             })
         stock["warnings"] = warnings
-        stock["crown"] = not crowned and not warnings
-        crowned = crowned or stock["crown"]
+    for stock, reasons in review_list(rows, held_tickers, held_sectors):
+        stock["crown"] = not reasons
+        # Reasons beyond the warnings, which the dashboard shows already.
+        labels = {item.get("label") for item in stock["warnings"] if isinstance(item, dict)}
+        stock["plan_reasons"] = [reason for reason in reasons if reason not in labels]
     return rows
+
+
+def _held_now():
+    """(tickers, {sector: [tickers]}) of open trades and waiting orders."""
+    try:
+        sectors = held_sectors()
+        tickers = {trade["ticker"] for trade in get_paper_trades(limit=1)["open"]}
+        tickers |= {order["ticker"] for order in get_pending_broker_orders()}
+    except (OSError, sqlite3.Error):
+        return set(), {}
+    return tickers, sectors
 
 
 def mark_open_trades(trades, prices):
@@ -744,6 +765,35 @@ def find_listed_stock(ticker):
     return None, None, f"{ticker} is not in the current Bot 1, Bot 2 or Bot 3 list"
 
 
+def plan_refusal(ticker, strategy):
+    """Why a hand buy of `ticker` is outside the plan, or None if it is
+    that bot's plan pick (same rule as the buy-plan email, with live
+    prices for the below-stop check)."""
+    data, error = _load_fresh_result(SLOT_SELECTION_JSON, "Slot selection")
+    if error:
+        return error
+    rows = copy.deepcopy((data.get("bots") or {}).get(strategy) or [])
+    try:
+        prices = latest_prices([row.get("ticker") for row in rows if isinstance(row, dict)])
+    except Exception:  # no live prices: the scan's warnings still count
+        prices = {}
+    held_tickers, sectors_held = _held_now()
+    mark_bot_list(rows, prices, held_tickers, sectors_held)
+    pick = next((row for row in rows if row.get("crown")), None)
+    if pick and pick.get("ticker") == ticker:
+        return None
+    mine = next((row for row in rows if row.get("ticker") == ticker), {})
+    reasons = [item.get("label") for item in mine.get("warnings") or [] if isinstance(item, dict)]
+    reasons += mine.get("plan_reasons") or []
+    why = f" ({', '.join(r for r in reasons if r)})" if reasons else ""
+    plan = (f"The plan pick for this bot is {pick['ticker']}." if pick
+            else "This bot has no plan pick today.")
+    return (
+        f"{ticker} is not in the buy plan{why}. {plan} "
+        "Hand buys follow the plan (HAND_BUY_PLAN_ONLY in .env)."
+    )
+
+
 @dashboard_app.post("/api/buy")
 async def dashboard_buy(request: Request):
     # A custom header forces a CORS preflight that this app never allows,
@@ -772,6 +822,11 @@ async def dashboard_buy(request: Request):
     stock, strategy, error = find_listed_stock(ticker)
     if stock is None:
         raise HTTPException(status_code=409, detail=error)
+
+    if hand_buy_plan_only():
+        refusal = plan_refusal(ticker, strategy)
+        if refusal:
+            raise HTTPException(status_code=409, detail=refusal)
 
     try:
         order = open_trade(

@@ -157,12 +157,19 @@ def build_slot_message(path=SLOT_SELECTION_JSON):
 
 
 def send_scan_email():
-    slot_text = build_slot_message()
+    """The evening email: the buy plan (buy_plan.py) and the A+ scan line."""
+    from buy_plan import current_buy_plan
+
+    try:
+        subject, plan = current_buy_plan()
+    except Exception as exc:  # a broken plan must not stop the email
+        slot_text = build_slot_message()
+        subject = "TradingBot daily scan summary"
+        plan = f"The buy plan could not be built: {exc}" + (f"\n\n{slot_text}" if slot_text else "")
     return send_email(
-        "TradingBot daily scan summary",
-        f"{build_scan_message()}\n\n"
-        + (f"{slot_text}\n\n" if slot_text else "")
-        + "This is a paper-trading research alert, not a trade order.",
+        subject,
+        f"{plan}\n\nA+ scan: {build_scan_message()}\n\n"
+        "This is a paper-trading research alert, not a trade order.",
     )
 
 

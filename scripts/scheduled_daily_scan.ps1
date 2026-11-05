@@ -1,4 +1,4 @@
-# Evening scan (6:00 PM Central, after the close): builds tomorrow's picks
+# Evening scan (5:30 PM Central, after the close): builds tomorrow's picks
 # from the day's final bars. Buying is scheduled_morning_buy.ps1.
 $ErrorActionPreference = "Stop"
 

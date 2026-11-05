@@ -238,7 +238,7 @@ def open_trade(client, stock, strategy, entry_source, price_lookup, database_pat
                 "planned entry is gone."
             )
     if entry_source == SOURCE_AUTO:
-        _check_auto_protection(ticker, stock, strategy, database_path)
+        check_auto_protection(ticker, stock, strategy, database_path)
     plan = plan_order(price, atr, risk_settings())
     if strategy == SOURCE_MOMENTUM:
         # Rides with a trailing stop; the 2R target is only for reference.
@@ -276,7 +276,7 @@ def open_trade(client, stock, strategy, entry_source, price_lookup, database_pat
     }
 
 
-def _check_auto_protection(ticker, stock, strategy, database_path):
+def check_auto_protection(ticker, stock, strategy, database_path):
     """Earnings and sector rules for automatic buys (TradeError if not)."""
     days = (stock.get("earnings") or {}).get("trading_days_until")
     if strategy != SOURCE_MOMENTUM and days is not None and days <= EARNINGS_EXIT_DAYS + 1:

@@ -5,7 +5,7 @@ or a position on Alpaca has no stop order.
   python run_health.py finish <job> ok|warn|failed [message] [--log FILE]
   python run_health.py check                       look for problems
 
-Jobs: morning_buy (8:45 AM Central) and daily_scan (6:00 PM Central),
+Jobs: morning_buy (8:45 AM Central) and daily_scan (5:30 PM Central),
 weekdays (scripts/install_daily_task.ps1). The scheduled scripts call
 start / finish; `failed` and `warn` email at once with the end of the log.
 The "TradingBot Watchdog" task runs `check` at 9:30 AM and 8:00 PM. It
@@ -40,7 +40,7 @@ JOBS = {
     },
     "daily_scan": {
         "label": "Evening scan",
-        "at": time(18, 0),
+        "at": time(17, 30),
         "grace": timedelta(minutes=90),
     },
 }

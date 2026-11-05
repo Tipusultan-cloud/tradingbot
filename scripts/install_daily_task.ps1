@@ -2,7 +2,7 @@ $ErrorActionPreference = "Stop"
 
 # Three weekday tasks (local time; the market opens 8:30 AM and closes
 # 3:00 PM Central):
-#   6:00 PM  TradingBot Daily Scan   full scan on the day's final bars
+#   5:30 PM  TradingBot Daily Scan   full scan on the day's final bars; its buy-plan email arrives before 6 PM
 #   8:45 AM  TradingBot Morning Buy  buys the picks 15 minutes after the open
 #   9:30 AM and 8:00 PM  TradingBot Watchdog  emails missed or failed runs
 #                                    and positions without a stop order
@@ -31,8 +31,8 @@ $Tasks = @(
     @{
         Name = "TradingBot Daily Scan"
         Script = "scheduled_daily_scan.ps1"
-        At = @("6:00 PM")
-        Description = "Runs the TradingBot scan pipeline on weekdays at 6:00 PM local time, after the close."
+        At = @("5:30 PM")
+        Description = "Runs the TradingBot scan pipeline on weekdays at 5:30 PM local time, after the close."
     },
     @{
         Name = "TradingBot Morning Buy"

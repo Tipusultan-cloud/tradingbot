@@ -320,6 +320,13 @@ class CrownTests(unittest.TestCase):
         self.assertEqual(codes(rows[1]), ["BELOW_STOP"])
         self.assertEqual(rows[2]["live_price"], 200.5)
 
+    def test_crown_skips_held_sectors(self):
+        rows = [listed("OKTA"), listed("VLO")]
+        rows[0]["sector"], rows[1]["sector"] = "Information Technology", "Energy"
+        app.mark_bot_list(rows, {}, {"FTNT"}, {"Information Technology": ["FTNT"]})
+        self.assertEqual([s["ticker"] for s in rows if s["crown"]], ["VLO"])
+        self.assertEqual(rows[0]["plan_reasons"], ["Information Technology already held (FTNT)"])
+
     def test_no_crown_when_every_stock_has_a_warning(self):
         rows = [listed("U", news={"status": "UNKNOWN"})]
         app.mark_bot_list(rows, {})

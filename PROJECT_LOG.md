@@ -210,7 +210,7 @@ The three bots:
   - `Start TradingBot.bat` → `start_tradingbot.ps1`: starts API (8000),
     dashboard (8001), scan pipeline, and ngrok.
   - Windows Task Scheduler, weekdays, local (Central) time:
-    **TradingBot Daily Scan** at 6:00 PM runs `scheduled_daily_scan.ps1`
+    **TradingBot Daily Scan** at 5:30 PM runs `scheduled_daily_scan.ps1`
     (every scan stage, with a mutex so two scans never overlap), and
     **TradingBot Morning Buy** at 8:45 AM runs `scheduled_morning_buy.ps1`
     (`auto_trader.py`), and **TradingBot Watchdog** at 9:30 AM and 8:00 PM
@@ -324,6 +324,60 @@ time. The exact final one-trade-per-week strategy has **not** been backtested.
 ---
 
 ## 5. Activity Log (newest first)
+
+### 2026-11-05 — Hand buys follow the buy plan
+
+**What:** A dashboard Buy is accepted only for each bot's **plan pick** 👑:
+the first stock in the bot's list with no warning (including "below stop"
+from the live price), not held, and in a sector not already held. Every
+other row shows "Not in plan" (hover for why) instead of a Buy button,
+with tags like "Information Technology already held (FTNT)" or "the plan
+pick is VLO". The server refuses any other hand buy with the reason and
+the plan pick. Bot 2 / Bot 3 "Next pick" shows the plan pick. The
+buy-plan email now lists one PLAN PICK per bot and the others under "Not
+in the plan". Setting `HAND_BUY_PLAN_ONLY` (default true; false = any
+listed stock, as before). First live check: Bot 2 plan pick VLO; Bot 1
+and Bot 3 none (KMB earnings, KHC earnings not checked, UHS / CNC Health
+Care held by REGN, XYZ bad news).
+
+**Why:** Recommendation 3 ("follow the email; only the #1 clean pick"),
+which the user asked to build in: hand trades outside the rules (MPC with
+earnings in 2 days, FTNT after bad news) make the results impossible to
+compare with the backtests.
+
+**How:** `buy_plan.review_list` / `plan_pick` (one rule for the email,
+dashboard and Buy check), `app.mark_bot_list` (held tickers and sectors,
+`plan_reasons`), `app.plan_refusal`, `broker.hand_buy_plan_only`,
+`web/dashboard.html`, `.env.example`. Tests: plan-pick, refusal and
+setting tests (327 pass). Dashboard restarted.
+
+### 2026-11-05 — Evening email is now a buy plan
+
+**Scan moved to 5:30 PM** (user decides at 6 PM): the buy-plan email
+arrives around 5:40 PM. Daily Scan task reinstalled; the watchdog expects
+the scan at 5:30 PM (`run_health.JOBS`).
+
+**What:** The email sent after the 6 PM scan is now "SultanQuant buy plan"
+(new `buy_plan.py`; `python buy_plan.py` prints it). Three parts:
+1. **Bought automatically at 8:45 AM:** the Bot 1 pick, or why the run
+   will skip it, using the same rules as the buy (`check_auto_protection`:
+   earnings within 2 trading days, sector held; buying paused).
+2. **For you to buy by hand:** Bot 2 / Bot 3 free slots and up to 3 clean
+   stocks each (no warnings, sector not held, one per sector), with
+   shares, entry, stop and target; then the stocks with warnings and why.
+3. **Your open trades** with stop and target.
+The subject says it at a glance, e.g. "no automatic buy (KMB skipped) · 1
+clean pick to consider". The A+ scan line stays at the end.
+
+**Why:** The user wants an email telling them what to buy, now that only
+Bot 1 buys by itself.
+
+**How:** `buy_plan.py`, `scan_notifications.send_scan_email`,
+`trade_manager.check_auto_protection` (was `_check_auto_protection`).
+Tests: new `tests/test_buy_plan.py` (320 pass). Test email sent
+2026-11-05 8:40 AM (first plan: KMB skipped for earnings, VLO the clean
+Bot 2 pick). Open question: the scheduled scan logs never show the
+"email sent" line, so the user is checking that the evening emails arrive.
 
 ### 2026-11-05 — Automatic trade notes; full trade CSV with a daily copy
 

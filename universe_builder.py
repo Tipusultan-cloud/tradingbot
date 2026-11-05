@@ -260,7 +260,7 @@ def remove_incomplete_daily_bar(
 
     # Before 4:15 PM New York, today's daily candle is still
     # incomplete. Use only completed sessions. (The scheduled
-    # scan runs at 6:00 PM Central, so it gets the final bar.)
+    # scan runs at 5:30 PM Central, so it gets the final bar.)
     if (
         last_date == now_et.date()
         and

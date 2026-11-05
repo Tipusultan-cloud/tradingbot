@@ -91,3 +91,11 @@ def latest_prices(tickers):
         StockLatestTradeRequest(symbol_or_symbols=sorted(set(tickers)))
     )
     return {ticker: float(trade.price) for ticker, trade in trades.items()}
+
+
+def hand_buy_plan_only():
+    """True (default): a dashboard Buy is accepted only for each bot's plan
+    pick (buy_plan.review_list). HAND_BUY_PLAN_ONLY=false allows any listed
+    stock, as before 2026-11-05."""
+    load_dotenv(BASE_DIR / ".env")
+    return os.getenv("HAND_BUY_PLAN_ONLY", "true").strip().lower() != "false"

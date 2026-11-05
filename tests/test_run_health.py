@@ -59,7 +59,7 @@ class LastDueTests(unittest.TestCase):
 
     def test_skips_the_weekend(self):
         due = run_health.last_due("daily_scan", central("2026-11-09T09:30:00"))
-        self.assertEqual(due, central("2026-11-06T18:00:00"))
+        self.assertEqual(due, central("2026-11-06T17:30:00"))
 
 
 class RunProblemTests(RunHealthCase):
@@ -91,7 +91,7 @@ class RunProblemTests(RunHealthCase):
         self.assertEqual(self.keys(central("2026-11-02T09:30:00")), ["unfinished"])
 
     def test_failed_run(self):
-        run_health.record_start("daily_scan", now=central("2026-11-02T18:00:00"), path=self.path)
+        run_health.record_start("daily_scan", now=central("2026-11-02T17:30:00"), path=self.path)
         run_health.record_finish("daily_scan", "failed", "scanner.py failed",
                                  now=central("2026-11-02T18:05:00"), path=self.path)
         problems = self.problems(central("2026-11-02T20:00:00"))

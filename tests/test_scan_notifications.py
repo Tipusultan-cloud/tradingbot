@@ -50,6 +50,7 @@ class EmailNotificationTests(unittest.TestCase):
         with (
             patch.dict(os.environ, settings, clear=True),
             patch("scan_notifications.build_scan_message", return_value="NO TRADE"),
+            patch("buy_plan.current_buy_plan", return_value=("SultanQuant buy plan: x", "PLAN BODY")),
             patch("scan_notifications.smtplib.SMTP_SSL") as smtp_ssl,
         ):
             self.assertTrue(send_scan_email())
@@ -63,6 +64,8 @@ class EmailNotificationTests(unittest.TestCase):
             smtp_ssl.return_value.__enter__.return_value.send_message.call_args[0][0]
         )
         self.assertEqual(sent_message["To"], "alerts@example.com")
+        self.assertEqual(sent_message["Subject"], "SultanQuant buy plan: x")
+        self.assertIn("PLAN BODY", sent_message.get_content())
         self.assertIn("NO TRADE", sent_message.get_content())
         self.assertIn("not a trade order", sent_message.get_content())
 
