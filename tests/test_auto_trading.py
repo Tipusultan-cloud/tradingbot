@@ -564,6 +564,10 @@ class DashboardBuyTests(JournalCase):
     def test_any_listed_stock_when_plan_only_is_off(self):
         with patch.object(app, "hand_buy_plan_only", return_value=False):
             self.assertEqual(self.post("PANW")["ticker"], "PANW")
+            self.post("VLO")
+        # PANW was outside the plan, VLO was the plan pick.
+        flags = {o["ticker"]: o["off_plan"] for o in get_pending_broker_orders(self.database)}
+        self.assertEqual(flags, {"PANW": 1, "VLO": 0})
 
     def test_hand_pick_from_bot_2_sends_order(self):
         result = self.post("vlo")

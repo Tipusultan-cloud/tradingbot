@@ -43,6 +43,8 @@ TRADE_CSV_FIELDS = (
     "sector",
     "entry_note",
     "exit_note",
+    "planned_price",
+    "off_plan",
 )
 
 # Columns added after the first journals were created.
@@ -67,8 +69,16 @@ ADDED_COLUMNS = {
     # bot's reason at entry, editable) and what was learned at the exit.
     "entry_note": "TEXT",
     "exit_note": "TEXT",
+    # Scan price the buy was planned at; fill - planned = slippage.
+    "planned_price": "REAL",
+    # 1 = bought outside the rules (a hand pick that was not the plan pick,
+    # or before the plan rule existed); kept out of the bots' report card.
+    "off_plan": "INTEGER",
 }
-BROKER_ORDER_ADDED_COLUMNS = {"target2_price": "REAL", "sector": "TEXT", "entry_note": "TEXT"}
+BROKER_ORDER_ADDED_COLUMNS = {
+    "target2_price": "REAL", "sector": "TEXT", "entry_note": "TEXT",
+    "planned_price": "REAL", "off_plan": "INTEGER",
+}
 NOTE_FIELDS = ("entry_note", "exit_note")
 MAX_NOTE_LENGTH = 2000
 
@@ -314,6 +324,8 @@ def record_entry(
     target2_price=None,
     sector=None,
     entry_note=None,
+    planned_price=None,
+    off_plan=None,
 ):
     ticker = str(ticker).strip().upper()
     if not ticker:
@@ -362,8 +374,8 @@ def record_entry(
                 ticker, entry_time, entry_price, atr, shares, stop_price,
                 target_price, setup_score, status, strategy,
                 entry_source, broker_order_id, target2_price, sector,
-                entry_note
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?, ?, ?)
+                entry_note, planned_price, off_plan
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 ticker,
@@ -383,6 +395,8 @@ def record_entry(
                 target2_price,
                 sector or None,
                 entry_note or None,
+                float(planned_price) if planned_price else None,
+                None if off_plan is None else int(bool(off_plan)),
             ),
         )
         trade = dict(connection.execute(
@@ -553,6 +567,8 @@ def add_broker_order(
     target2_price=None,
     sector=None,
     entry_note=None,
+    planned_price=None,
+    off_plan=None,
 ):
     """Remember a sent entry order until it fills or is canceled."""
     initialize_journal(database_path)
@@ -562,8 +578,8 @@ def add_broker_order(
             INSERT INTO broker_orders (
                 order_id, ticker, strategy, entry_source, shares, atr,
                 stop_price, target_price, setup_score, status, submitted_at,
-                target2_price, sector, entry_note
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?)
+                target2_price, sector, entry_note, planned_price, off_plan
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?, ?, ?)
             """,
             (
                 str(order_id),
@@ -579,6 +595,8 @@ def add_broker_order(
                 float(target2_price) if target2_price is not None else None,
                 sector or None,
                 entry_note or None,
+                float(planned_price) if planned_price else None,
+                None if off_plan is None else int(bool(off_plan)),
             ),
         )
 

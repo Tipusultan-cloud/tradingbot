@@ -94,8 +94,9 @@ The three bots:
   - A stock must pass ALL: original scan 4/4, top-down 4/4, SPY bullish,
     sector bullish, score ≥ 95, volume ≥ 1.20×, RSI 50–65, stock beats sector,
     sector beats SPY, stock beats SPY, **no bad news in the last 3 trading
-    days** (`news_checker.py`). Earnings within 5 trading days
-    shows a warning only (2026-10-21, `earnings_calendar.py`).
+    days** (`news_checker.py`). Earnings within 10 trading days (2 weeks)
+    shows a warning only (`earnings_calendar.py`; was 5 days until
+    2026-10-30). Automatic buys skip earnings within 2 trading days (2.8).
   - Builds a risk preview for the winner (see 2.10) and lists up to 5 alternates.
   - `weekly_lock` is currently `false` → the pick can change day to day.
   - When SPY is not bullish, Bot 1 waits; Bots 2 and 3 still run.
@@ -157,6 +158,16 @@ The three bots:
     plus a single 2R target.
   - **SPY cash parking** (`cash_parking.py`): after the buys, half
     (`SPY_PARK_FRACTION` 0.5) of the bot's idle cash is kept in SPY.
+  - **Protections** (2026-11-03): an earnings exit sells Bot 1 / Bot 2
+    trades the day before or day of earnings, and automatic buys with
+    earnings within 2 trading days are skipped; one trade per sector
+    across all bots (`MAX_TRADES_PER_SECTOR`); automatic buys pause after
+    a 6% loss in 30 days or for 7 days after 5 losses in a row
+    (`risk_guard.py`).
+  - **Hand buys** (dashboard Buy) only for each bot's plan pick 👑
+    (`buy_plan.review_list`: no warning, not held, sector not held), while
+    `HAND_BUY_PLAN_ONLY=true` (2026-11-05). Each order stores the scan
+    price (`planned_price`, for slippage) and `off_plan`.
 
 ### 2.9 Webhook API — `app.py` (port 8000)
 - **What:** Receives TradingView BUY/SELL alerts over the internet via ngrok.
@@ -168,7 +179,9 @@ The three bots:
   output **and** is the current pick (missing/stale data = reject) →
   risk calculation → paper-journal entry. SELL closes the paper position.
   While auto trading is on, TradingView alerts are ignored, so the journal
-  always matches the Alpaca account.
+  always matches the Alpaca account. Since 2026-11-05 the API and ngrok
+  run only with `WEBHOOK_ENABLED=true` (off by default: nothing is open to
+  the internet).
 
 ### 2.10 Risk management
 - **What:** Position size, stop, and targets for every trade.
@@ -189,26 +202,38 @@ The three bots:
   trades are closed by the daily scan with the same rules (`paper_exits.py`).
   `shadow_exits.py` replays other exit rules on the same trades so they can
   be compared (Bot 1 / Bot 2 trades only).
+- **Notes** (2026-11-05): "Why" is written at the buy (reason, sector, hand
+  pick, warnings); "Lesson" is written when a trade closes
+  (`trade_lessons.py`: R, sessions, best / worst close, SPY, earnings,
+  takeaway). Hand-written notes are never replaced.
+- **Daily copy** of the CSV: `data/trade_history/paper_trades_<date>.csv`.
+  Trades are never deleted.
+- **Report card** (`report_card.py`): each bot against its backtest,
+  without off-plan trades (shown apart), with average slippage.
 
 ### 2.12 Dashboard — `app.py` `dashboard_app` + `web/dashboard.html` (port 8001)
 - **What:** The SultanQuant page at `http://127.0.0.1:8001` (gold crown logo,
   Central and New York clocks).
 - **Why:** See everything at a glance and pick trades by hand.
 - **How:** Refreshes every 30 s and warns on missing/invalid/stale files.
-  Shows open profit, SPY parking, the scan funnel, the three bots (each tab
-  shows only that bot's area and next pick), open positions (price track,
-  R now, % above the stop, day N of 20), market sectors, trade history and
-  the exit comparison. **Buy** buttons in the bot lists and **Sell now** on
-  each position send real Alpaca paper orders. Works on phones and tablets.
-  Bound to 127.0.0.1 only and **never** forwarded through ngrok because it
-  has no login. Restart `Start TradingBot.bat` after code changes.
+  Five pages from the top menu (2026-11-05): **Overview** (open P/L, SPY
+  parking, regime, slots, open positions with price track, R now, % above
+  the stop, day N of 20, **Sell now**; bot activity), **Bots** (bot cards
+  as the picker, scan funnel, each bot's list with the 👑 plan pick and its
+  **Buy** button), **Market** (sectors, qualified setups), **History**
+  (report card, trades with notes, exit comparison, CSV), **System**
+  (freshness, problems; a red count on the menu and a banner on
+  Overview). Works on phones and tablets. Bound to 127.0.0.1 only and
+  **never** forwarded through ngrok because it has no login.
+  `Start TradingBot.bat` restarts it so new code is loaded.
 
 ### 2.13 Automation and scripts — `scripts/`, `.bat` files
 - **What:** One-click start, scheduled scan and buy, backups, optional email.
 - **Why:** The bot must run every day without remembering to start it.
 - **How:**
-  - `Start TradingBot.bat` → `start_tradingbot.ps1`: starts API (8000),
-    dashboard (8001), scan pipeline, and ngrok.
+  - `Start TradingBot.bat` → `start_tradingbot.ps1`: restarts the
+    dashboard (8001) with the current code and runs the scan pipeline; the
+    webhook API (8000) and ngrok only with `WEBHOOK_ENABLED=true`.
   - Windows Task Scheduler, weekdays, local (Central) time:
     **TradingBot Daily Scan** at 5:30 PM runs `scheduled_daily_scan.ps1`
     (every scan stage, with a mutex so two scans never overlap), and
@@ -220,8 +245,10 @@ The three bots:
     **TradingBot Keep Awake** keeps the PC awake 8:00 AM - 7:00 PM on
     trading days (the PC otherwise sleeps after 5 minutes, and its Modern
     Standby can ignore wake timers).
-  - `scan_notifications.py`: emails the result via SMTP (Gmail App Password)
-    if configured in `.env`; skipped otherwise.
+  - `scan_notifications.py`: after the 5:30 PM scan emails the **buy
+    plan** (`buy_plan.py`: Bot 1's automatic buy or why it is skipped, one
+    plan pick per hand-bought bot, open trades) via SMTP (Gmail App
+    Password); the report card on Fridays; watchdog alerts any time.
   - `Backup TradingBot.bat`: zip to `backups/`, excluding `.env` and `.venv`.
 
 ### 2.14 Backtesting — `backtests/` → `results/backtests/`
@@ -250,27 +277,34 @@ The three bots:
   applied** — it costs money while running and does not yet install the app.
 
 ### 2.16 Tests — `tests/`
-- **What:** 255 unit tests in 16 files: auto trading (with a fake Alpaca
-  client), cash parking, dashboard data, earnings, market clock, master
-  selector, momentum scanner, news, paper exits, paper journal, pullback
-  slots, email, shadow exits, trend exits, US market universe.
+- **What:** 332 unit tests in 21 files (2026-11-05): auto trading (with a
+  fake Alpaca client), buy plan, cash parking, dashboard data, earnings,
+  market clock, master selector, momentum scanner, news, paper exits,
+  paper journal, protections, pullback slots, report card, run health,
+  email, shadow exits, trade lessons, trade quality (off-plan, slippage),
+  trend exits, US market universe.
 - **Why:** Catch breakage before it reaches real orders.
 - **How:** `.\.venv\Scripts\python.exe -m unittest discover -s tests -v`
 
 ---
 
-## 3. Current State (as of 2026-10-21)
+## 3. Current State (as of 2026-11-05)
 
 | Item | Value |
 | --- | --- |
 | Location | `C:\Users\tipus\OneDrive\Documents\TradingBot` |
 | Remote | `https://github.com/Tipusultan-cloud/tradingbot.git` |
-| Branch | `main` |
+| Branch | `news-exits-and-universe-options` (not merged into `main` yet) |
 | Python env | `.venv/` (yfinance, FastAPI, uvicorn, alpaca-py 0.44.0, …) |
-| Latest scan | 2026-10-21 08:33 — **WAIT**: SPY market regime is not bullish. 0 approved. |
-| Top sectors today | Energy, Health Care |
+| Broker | Alpaca **paper**, auto trading on; automatic buys Bot 1 only (`AUTO_BUY_BOTS=A_PLUS`); hand buys plan pick only |
+| Schedule (Central, trading days) | Keep Awake 8:00 AM - 7:00 PM · Morning Buy 8:45 AM · Watchdog 9:30 AM / 8:00 PM · Scan 5:30 PM (buy-plan email ~5:40 PM) |
+| Webhook / ngrok | Off (`WEBHOOK_ENABLED=false`) |
+| Open trades | FTNT (Bot 2, off-plan, stop $120.94), REGN (Bot 3, trailing stop $907.69) |
+| Closed trades | MPC −$87.21 (−1.01R, off-plan, stopped after earnings) |
+| Latest scan | 2026-11-05 1:18 AM: Bot 1 pick KMB (skipped at 8:45 AM, earnings that day); Bot 2 plan pick VLO; top sectors Health Care, Consumer Staples |
+| Tests | 332 pass |
 
-### Backtest results (2019-10-07 → 2026-10-07 unless noted)
+### Backtest results (Bot 1 history, 2019-10-07 → 2026-10-07 unless noted)
 | Test | Trades | Win % | Expectancy (R) | Profit factor | Return % | Max DD % |
 | --- | --- | --- | --- | --- | --- | --- |
 | Original backtester (all signals) | 1953 | 39.8 | 0.105 | 1.18 | — | 101 R |
@@ -281,49 +315,81 @@ The three bots:
 | Holdout — untouched (2024-10-07 →) | 27 | 51.9 | 0.501 | 1.85 | 12.4 | 5.2 — **PASS** |
 | SPY buy & hold, same period | — | — | — | — | 193.2 | 33.7 |
 
-**What it means:** Each stricter version improved quality (win rate and
-expectancy up, drawdown down), and the untouched holdout passed. But total
-return is far below SPY because the bot is in the market only ~30–40% of the
-time. The exact final one-trade-per-week strategy has **not** been backtested.
+Later 10-year tests (see the Activity Log): Bot 1 49.2% / +0.34R and Bot 2
+48.7% / +0.31R per trade (2026-10-28); split exit +54.3% vs +49.7% for 2R
+(2026-10-31); Bot 3 4.2% a year, 33% wins, best 33.6R (2026-10-31); half
+of idle cash in SPY 13.8% → 22.3% a year (2026-10-31).
 
 ---
 
 ## 4. Open Items / Next Steps
 
-- [ ] Backtest the exact final strategy (all A+ rules + max one new trade per
-      week). *Why:* earlier backtests tested older versions.
-- [x] News step 1: earnings-date blackout (2026-10-21).
-- [x] News step 1b: backtest the earnings blackout (2026-10-21). It made
-      results worse (return 33.9% → 17.7%). Changed to warning only.
-- [x] News step 2: bad-news block built (2026-10-21).
-- [ ] Add real Alpaca API keys to `.env`, then run
-      `backtests/backtest_bad_news_block.py` and review the blocked headlines.
-- [ ] Persistent one-trade-per-week lock (`weekly_lock` is always `false` now).
-- [ ] Forward paper-trade tracking and weekly performance report.
-- [ ] Update `app.py` to use the weekly master selection.
-- [ ] Docker, CI pipeline (Azure DevOps), automated tests, security scanning.
-- [ ] Review/apply Terraform (Azure VM) — only after approving plan and cost.
-- [ ] Monitoring and logging for a cloud deployment.
-- [x] Leader-pullback entry + 2 trade slots, paper only (2026-10-28).
-- [x] Automatic paper exits at stop / 2R / 20 days (2026-10-28).
-- [x] Exit changed to half at 2R + rest at 2.5R (2026-10-31).
+Done since October: Alpaca paper keys and auto trading (2026-10-29/30);
+Bot 2 + slots, exits at stop / 2R / 20 days (2026-10-28); half 2R + rest
+2.5R (2026-10-31); SPY parking, Bot 3 (2026-10-31); earnings exit, sector
+limit, loss limit, notes, report card (2026-11-03); watchdog, Keep Awake,
+dashboard pages, automatic lessons, buy-plan email, plan-only hand buys,
+slippage and off-plan tracking, webhook off (2026-11-05).
+
+- [ ] Check that the scheduled buy-plan email arrives (~5:40 PM); the
+      scan logs never show the "sent" line.
+- [ ] Backtest "Bot 2 buys only the clean #1 pick" (the plan pick rule). If
+      it holds up, turn Bot 2's automatic buys back on.
 - [ ] Backtest the half 2R + 2.5R exit on Bot 2 and with 2 slots.
-- [ ] Watch the first live Alpaca paper trade with the new exit: both OCO
-      orders appear, and the stop moves to entry after the half fills.
-- [ ] After 2-3 months of paper trades, compare `A_PLUS` vs `PULLBACK`
-      results in the journal against the backtest.
-- [x] Earnings exit, one trade per sector, account loss limit (2026-11-03).
-- [x] Trade journal notes: why / lesson (2026-11-03).
-- [x] Weekly report card per bot vs backtest (2026-11-03).
-- [ ] Planned vs real buy price (slippage) in the report card: store the
-      scan price on each entry order.
 - [ ] Run Bot 1 / Bot 2 backtests with the earnings exit and the sector
       limit, to see what they cost in return.
+- [ ] Better data source than Yahoo Finance (rate limits; earnings lookups
+      fail; report time before / after the market is unknown).
+- [ ] Watch the first live trade with the split exit: both OCO orders
+      appear, and the stop moves to entry after the half fills.
+- [ ] After 10+ closed trades per bot (2-3 months), compare each bot with
+      its backtest in the report card.
+- [ ] Merge `news-exits-and-universe-options` into `main`.
+- [ ] Move off the home PC: review / apply Terraform (Azure VM) only after
+      approving the plan and cost; then monitoring and a dashboard login.
+- [ ] Docker, CI pipeline, security scanning.
 - [ ] Real-money automation — only after enough forward paper-trading evidence.
 
 ---
 
 ## 5. Activity Log (newest first)
+
+### 2026-11-05 — Problem review fixes: webhook off, off-plan trades, slippage, cleanup
+
+**What:**
+- **Webhook API and ngrok stopped** (they ran code from 2026-11-03 and
+  exposed the API to the internet, while every alert is ignored with auto
+  trading on). New `.env` setting `WEBHOOK_ENABLED` (default false):
+  `start_tradingbot.ps1` then stops a running API and ngrok and starts
+  neither.
+- **Off-plan trades:** new `off_plan` column on trades and entry orders.
+  A dashboard Buy outside the plan (possible only with
+  `HAND_BUY_PLAN_ONLY=false`) is saved as off-plan. MPC and FTNT (hand
+  picks with warnings, before the plan rule) set to off-plan by hand;
+  REGN (automatic) counts. The report card leaves off-plan trades out of
+  each bot and shows them on their own line ("Off-plan trades (not counted
+  above): 1 closed (MPC), 1 open | -1.01R | $-87.21"), so Bot 2 now starts
+  at 0 closed trades.
+- **Slippage:** new `planned_price` (the scan price) on every entry order,
+  carried to the trade. The report card (email and dashboard column)
+  shows the average real fill vs plan per bot, in % and R. Existing trades
+  have no planned price.
+- **Git cleanup:** the 10 scan output files and `sector_cache.json` in
+  `data/` are no longer tracked (they changed every scan); `data/*.json`
+  and `data/top_200_universe.csv` are ignored. `data/archive/` stays.
+- **Project log** sections 2.4, 2.8, 2.9, 2.11–2.13, 2.16, 3 and 4 brought
+  up to date.
+
+**Why:** The user asked to fix every item of the problem review (FTNT near
+its stop needs no fix: the stop decides).
+
+**How:** `scripts/start_tradingbot.ps1` (`Get-EnvSetting`,
+`WEBHOOK_ENABLED`), `paper_journal.py` (`planned_price`, `off_plan`),
+`trade_manager.open_trade(off_plan=)`, `app.dashboard_buy`,
+`report_card.py` (`slippage_stats`, `off_plan`), `web/dashboard.html`
+(Slippage column, Off-plan row), `.env.example`, `.gitignore`. Journal
+backed up before the off-plan update. Tests: new
+`tests/test_trade_quality.py` (332 pass). Dashboard restarted.
 
 ### 2026-11-05 — Hand buys follow the buy plan
 

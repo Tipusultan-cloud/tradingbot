@@ -207,8 +207,14 @@ def busy_split(database_path=None):
     return busy_by_bot(open_trades, get_pending_broker_orders(database_path))
 
 
-def open_trade(client, stock, strategy, entry_source, price_lookup, database_path=None):
-    """Send a market buy for one stock from a bot list."""
+def open_trade(client, stock, strategy, entry_source, price_lookup, database_path=None,
+               off_plan=False):
+    """Send a market buy for one stock from a bot list.
+
+    The scan price is saved as the planned price (slippage = fill - plan).
+    `off_plan` marks a hand pick outside the buy plan; such trades are kept
+    out of the bots' report card.
+    """
     from alpaca.trading.enums import OrderSide, TimeInForce
     from alpaca.trading.requests import MarketOrderRequest
 
@@ -265,6 +271,8 @@ def open_trade(client, stock, strategy, entry_source, price_lookup, database_pat
         database_path=database_path,
         sector=stock.get("sector"),
         entry_note=entry_reason(stock, strategy, entry_source),
+        planned_price=planned or (stock.get("risk_preview") or {}).get("entry_reference"),
+        off_plan=off_plan,
     )
     return {
         "ticker": ticker,
@@ -509,6 +517,8 @@ def sync(client, price_lookup, database_path=None, today=None, delay=1.0):
                 target2_price=target2,
                 sector=pending.get("sector"),
                 entry_note=pending.get("entry_note"),
+                planned_price=pending.get("planned_price"),
+                off_plan=pending.get("off_plan"),
             )
             finish_broker_order(
                 pending["order_id"], "FILLED", trade_id=trade["id"],

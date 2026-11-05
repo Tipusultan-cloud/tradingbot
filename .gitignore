@@ -23,3 +23,6 @@ results/backtests/*.pkl
 data/run_status.json
 data/run_status.tmp
 data/trade_history/
+# Scan output and caches, rebuilt by every scan (data/archive/ stays tracked)
+data/*.json
+data/top_200_universe.csv

@@ -41,13 +41,30 @@ function Stop-AppServer([string]$AppName) {
     }
 }
 
+# The TradingView webhook API and its ngrok tunnel run only with
+# WEBHOOK_ENABLED=true in .env. While AUTO_TRADING=true the webhook ignores
+# every alert, so by default neither runs and nothing is open to the
+# internet (they ran on old code from 2026-11-03 to 2026-11-05).
+function Get-EnvSetting([string]$Name, [string]$Default) {
+    $envFile = Join-Path $ProjectDir ".env"
+    if (Test-Path $envFile) {
+        $line = Get-Content $envFile | Where-Object { $_ -match "^\s*$Name\s*=" } | Select-Object -Last 1
+        if ($line) { return ($line -split "=", 2)[1].Trim() }
+    }
+    return $Default
+}
+$WebhookEnabled = (Get-EnvSetting "WEBHOOK_ENABLED" "false").ToLower() -eq "true"
+
 # ------------------------------------------------------------
-# 1. FASTAPI SERVER
+# 1. FASTAPI SERVER (TradingView webhook)
 # ------------------------------------------------------------
 Stop-AppServer "app"
 $port8000 = Get-NetTCPConnection -LocalPort $ApiPort -State Listen -ErrorAction SilentlyContinue
 
-if ($port8000) {
+if (-not $WebhookEnabled) {
+    Write-Host "Webhook API: off (WEBHOOK_ENABLED is not true in .env)" -ForegroundColor Gray
+}
+elseif ($port8000) {
     Write-Host "Port $ApiPort is used by another program; the webhook API was not started." -ForegroundColor Red
 }
 else {
@@ -128,7 +145,16 @@ Read-Host 'Press Enter to close this scanner window'
 # ------------------------------------------------------------
 $ngrokProcess = Get-Process ngrok -ErrorAction SilentlyContinue
 
-if ($ngrokProcess) {
+if (-not $WebhookEnabled) {
+    if ($ngrokProcess) {
+        $ngrokProcess | Stop-Process -Force -Confirm:$false -ErrorAction SilentlyContinue
+        Write-Host "ngrok: stopped (the webhook is off)" -ForegroundColor Yellow
+    }
+    else {
+        Write-Host "ngrok: off (the webhook is off)" -ForegroundColor Gray
+    }
+}
+elseif ($ngrokProcess) {
     Write-Host "ngrok: already running" -ForegroundColor Green
 }
 else {
@@ -156,7 +182,9 @@ Set-Location '$ProjectDir'
 Write-Host ""
 Write-Host "TradingBot startup launched." -ForegroundColor Green
 Write-Host "Dashboard (local only): http://127.0.0.1:$DashboardPort" -ForegroundColor Gray
-Write-Host "Webhook API (local): http://127.0.0.1:$ApiPort" -ForegroundColor Gray
-Write-Host "ngrok exposes the webhook API only." -ForegroundColor Gray
+if ($WebhookEnabled) {
+    Write-Host "Webhook API (local): http://127.0.0.1:$ApiPort" -ForegroundColor Gray
+    Write-Host "ngrok exposes the webhook API only." -ForegroundColor Gray
+}
 Write-Host ""
 Start-Sleep -Seconds 2

@@ -622,7 +622,7 @@
     <section class="card">
       <div class="card-head"><h3>Weekly report card</h3><span id="report-week" class="hint">Each bot against its 10-year backtest · emailed on Fridays</span></div>
       <div class="card-body table-wrap">
-        <table><thead><tr><th>Bot</th><th>Closed</th><th>Win rate</th><th>Avg win</th><th>Avg loss</th><th>R per trade</th><th>Total</th><th>P&amp;L</th><th>Verdict</th></tr></thead><tbody id="report-table"><tr><td colspan="9" class="empty">Loading report card…</td></tr></tbody></table>
+        <table><thead><tr><th>Bot</th><th>Closed</th><th>Win rate</th><th>Avg win</th><th>Avg loss</th><th>R per trade</th><th>Total</th><th>P&amp;L</th><th title="Real fill vs the planned scan price, average per buy">Slippage</th><th>Verdict</th></tr></thead><tbody id="report-table"><tr><td colspan="10" class="empty">Loading report card…</td></tr></tbody></table>
       </div>
     </section>
     <section class="card">
@@ -1330,7 +1330,7 @@
       const body = byId("report-table");
       body.replaceChildren();
       if (!report?.bots) {
-        emptyRow(body, 9, "Report card not available.");
+        emptyRow(body, 10, "Report card not available.");
         return;
       }
       const r = (value) => value == null ? null : `${value > 0 ? "+" : value < 0 ? "−" : ""}${Math.abs(value).toFixed(2)}R`;
@@ -1352,9 +1352,30 @@
         td(row, `${r(stats.expectancy_r) ?? "—"} · test ${r(test.expectancy_r) ?? "—"}`, tone(stats.expectancy_r));
         td(row, stats.closed ? r(stats.total_r) : null, tone(stats.total_r));
         td(row, stats.closed ? money(stats.pnl, true) : null, tone(stats.pnl));
+        const slip = bot.slippage || {};
+        // Paying more than planned is bad, so a positive slippage shows red.
+        const slipCell = td(row, slip.buys ? `${slip.avg_pct > 0 ? "+" : ""}${number(slip.avg_pct, 2)}% · ${r(slip.avg_r)}` : null, slip.avg_pct > 0 ? "negative" : slip.avg_pct < 0 ? "positive" : "");
+        slipCell.title = slip.buys ? `Average over ${slip.buys} buy(s): real fill vs the scan price` : "No buy with a planned price yet";
         const [label, cls] = verdicts[bot.verdict] || [bot.verdict, ""];
         const cell = td(row, label, cls);
         cell.title = bot.verdict_text || "";
+        body.appendChild(row);
+      }
+      // Trades outside the rules are shown apart so they do not score a bot.
+      const off = report.off_plan || {};
+      if (off.closed || off.open) {
+        const row = document.createElement("tr");
+        td(row, el("span", "tag held", "Off-plan"));
+        td(row, `${number(off.closed ?? 0)}${off.open ? ` (+${off.open} open)` : ""}`);
+        td(row, `${pct(off.win_rate) ?? "—"}`, "num-dim");
+        td(row, r(off.avg_win_r), tone(off.avg_win_r));
+        td(row, r(off.avg_loss_r), tone(off.avg_loss_r));
+        td(row, r(off.expectancy_r), tone(off.expectancy_r));
+        td(row, off.closed ? r(off.total_r) : null, tone(off.total_r));
+        td(row, off.closed ? money(off.pnl, true) : null, tone(off.pnl));
+        td(row, null);
+        const note = td(row, "Not counted", "num-dim");
+        note.title = `Hand picks outside the buy plan and trades from before it: ${(off.tickers || []).join(", ") || "none closed"}`;
         body.appendChild(row);
       }
     }

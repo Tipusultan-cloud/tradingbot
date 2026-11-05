@@ -823,14 +823,16 @@ async def dashboard_buy(request: Request):
     if stock is None:
         raise HTTPException(status_code=409, detail=error)
 
-    if hand_buy_plan_only():
-        refusal = plan_refusal(ticker, strategy)
-        if refusal:
-            raise HTTPException(status_code=409, detail=refusal)
+    # Outside the plan: refused while HAND_BUY_PLAN_ONLY is on, otherwise
+    # bought but marked off-plan (kept out of the bots' report card).
+    refusal = plan_refusal(ticker, strategy)
+    if refusal and hand_buy_plan_only():
+        raise HTTPException(status_code=409, detail=refusal)
 
     try:
         order = open_trade(
-            get_trading_client(), stock, strategy, SOURCE_MANUAL, latest_price
+            get_trading_client(), stock, strategy, SOURCE_MANUAL, latest_price,
+            off_plan=bool(refusal),
         )
     except TradeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
