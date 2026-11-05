@@ -294,7 +294,7 @@ The three bots:
 | --- | --- |
 | Location | `C:\Users\tipus\OneDrive\Documents\TradingBot` |
 | Remote | `https://github.com/Tipusultan-cloud/tradingbot.git` |
-| Branch | `news-exits-and-universe-options` (not merged into `main` yet) |
+| Branch | `main` (merged from `news-exits-and-universe-options` 2026-11-05) |
 | Python env | `.venv/` (yfinance, FastAPI, uvicorn, alpaca-py 0.44.0, …) |
 | Broker | Alpaca **paper**, auto trading on; automatic buys Bot 1 only (`AUTO_BUY_BOTS=A_PLUS`); hand buys plan pick only |
 | Schedule (Central, trading days) | Keep Awake 8:00 AM - 7:00 PM · Morning Buy 8:45 AM · Watchdog 9:30 AM / 8:00 PM · Scan 5:30 PM (buy-plan email ~5:40 PM) |
@@ -344,7 +344,7 @@ slippage and off-plan tracking, webhook off (2026-11-05).
       appear, and the stop moves to entry after the half fills.
 - [ ] After 10+ closed trades per bot (2-3 months), compare each bot with
       its backtest in the report card.
-- [ ] Merge `news-exits-and-universe-options` into `main`.
+- [x] Merge `news-exits-and-universe-options` into `main` (2026-11-05, fast-forward).
 - [ ] Move off the home PC: review / apply Terraform (Azure VM) only after
       approving the plan and cost; then monitoring and a dashboard login.
 - [ ] Docker, CI pipeline, security scanning.
