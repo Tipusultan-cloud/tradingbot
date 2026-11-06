@@ -303,7 +303,7 @@ The three bots:
 | Open trades | FTNT (Bot 2, off-plan, stop $120.94) |
 | Closed trades | MPC −$87.21 (−1.01R, off-plan, stopped on earnings day); REGN −$84.78 (−1.00R, Bot 3, stopped 2026-11-05) |
 | Latest scan | 2026-11-05 1:18 AM: Bot 1 pick KMB (skipped at 8:45 AM, earnings that day); Bot 2 plan pick VLO; top sectors Health Care, Consumer Staples |
-| Tests | 360 pass |
+| Tests | 362 pass |
 
 ### Backtest results (Bot 1 history, 2019-10-07 → 2026-10-07 unless noted)
 | Test | Trades | Win % | Expectancy (R) | Profit factor | Return % | Max DD % |
@@ -332,8 +332,8 @@ limit, loss limit, notes, report card (2026-11-03); watchdog, Keep Awake,
 dashboard pages, automatic lessons, buy-plan email, plan-only hand buys,
 slippage and off-plan tracking, webhook off (2026-11-05).
 
-- [ ] Check that the scheduled buy-plan email arrives (~5:40 PM); the
-      scan logs never show the "sent" line.
+- [ ] Check that the buy-plan email reaches the new Outlook address (~5:40 PM);
+      the scan log now shows the "sent" line.
 - [x] Backtest "Bot 2 buys only the clean #1 pick" (2026-11-06): mixed, weak in
       the last 5 years, so automatic buys stay off.
 - [ ] Backtest the half 2R + 2.5R exit on Bot 2 and with 2 slots.
@@ -354,6 +354,132 @@ slippage and off-plan tracking, webhook off (2026-11-05).
 ---
 
 ## 5. Activity Log (newest first)
+
+### 2026-11-06 — Bots 1+2 against all three, same number of open trades
+
+**What:** `backtests/backtest_which_bots.py` (10 years, Bot 1 at 3R, 1 per sector,
+Bot 3 in its own slot). `MOMENTUM_SLOTS` added to `backtest_three_bots.py`
+(off by default).
+
+| Most open trades, Bot 2 list | Bots 1+2 | Bots 1+2 and Bot 3 | Bots 1+2 ahead (of 20 starts) |
+|---|---|---|---|
+| 3, plan pick | +157.4% | +130.4% | 11 |
+| 4, plan pick | +256.0% | +197.8% | 16 |
+| 3, top 5 | +341.8% | +175.9% | 20 |
+| 4, top 5 | +386.2% | +412.9% | 0 |
+
+**Why:** The user asked whether trading only Bots 1 and 2 makes more.
+
+**Result:** Bots 1+2 usually make more at the same risk, but not always, and
+small changes move results a lot, so these totals are not forecasts. Against
+Bot 1 alone (2 slots, live sector limit: +52.2%), Bots 1+2 with the plan pick make
++96.4% and were ahead from all 20 starts, with last 5 years +20.4% vs +17.9%, last
+2 years +7.3% vs +5.5%, drawdown 12.0% vs 9.2%.
+
+**Correction:** The Bot 2 plan pick entry below judged the plan pick against
+results with no sector limit on one side and did not apply the limit. With the
+limit on both sides the plan pick beats Bot 1 alone in every period, so that
+reason for keeping Bot 2's automatic buys off no longer holds. Automatic Bot 2
+buys would still need a code change: the automatic path uses the slot pick
+(CRL on 2026-11-06), not the plan pick (VLO). No settings changed.
+
+### 2026-11-06 — Merging Bots 2 and 3 tested and rejected
+
+**What:** `backtests/backtest_combine_bots.py` (10 years to 2026-11-05, each
+trade keeps its own exit).
+
+| Setup | Return | Max DD | Exp. R | Last 5 yrs | At 0.25% slippage |
+|---|---|---|---|---|---|
+| Bot 2 alone, 1 slot | +58.3% | 7.4% | 0.221 | +11.5% | +34.5% |
+| Bot 3 alone, 1 slot | +20.3% | 12.2% | 0.212 | -1.2% | +14.7% |
+| Merged, 1 slot, Bot 2 first | +64.0% | 6.8% | 0.275 | +8.9% | +31.6% |
+| Merged, 1 slot, Bot 3 first | +19.5% | 20.4% | 0.116 | -9.8% | +13.4% |
+| Bot 2 alone, 2 slots | +103.1% | 11.6% | 0.181 | +9.9% | +82.2% |
+| Merged, 2 slots, Bot 2 first | +89.3% | 14.0% | 0.175 | +8.4% | +33.1% |
+
+**Why:** The user asked whether the two bots could be combined.
+
+**Result:** No change. The bots do move differently (monthly correlation 0.12),
+but Bot 3's edge is too weak to add much. Merged with Bot 2 first is a small,
+unreliable gain, with only 11% of trades from Bot 3. Bot 3 first is much worse.
+Bot 3 alone ranged from +13.4% to +51.8% across 20 start dates.
+
+### 2026-11-06 — Alert email address changed
+
+**What:** `TRADINGBOT_ALERT_EMAIL` in `.env` now points to the user's Outlook
+address, and a test email was accepted for sending.
+
+**Why:** The user found the emails had been sent, but to a different address
+from the one they check. That settles the missing email below.
+
+**Result:** The buy plan, watchdog and report card emails all use this setting.
+
+### 2026-11-06 — Missing email checked; scan log now shows the result
+
+**What:** The scan works: the 5:30 PM run on 2026-11-05 exited 0, and the next
+one is 5:30 PM on 2026-11-06. Gmail login works (235), and a labeled test email
+was accepted by Gmail. `scripts/scheduled_daily_scan.ps1` now passes the email
+step's output to the log, which was blank after "Sending scan summary email".
+
+**Why:** The user had not received an email. The sender and alert address are
+the same Gmail address, but the user says email worked before, so that is
+less likely. What did change: the scan moved from morning to evening
+(2026-11-02), so the email comes about 5:40 PM, not in the morning; and the
+subject changed from "TradingBot daily scan summary" to "SultanQuant buy plan"
+(2026-11-05). A dry run with sending off built the email normally, and neither
+Nov 5 scan logged an email failure. Delivery to the inbox is not confirmed.
+
+**Result:** Morning Buy on 2026-11-06 ran at 8:45 AM and bought $3,383.31 of SPY
+(75% parking). Keep Awake ended with 0xC000013A this morning and is not running;
+the Scan, Morning Buy and Watchdog tasks all have WakeToRun on. Not fixed yet.
+
+### 2026-11-06 — Full setup compared: 2 slots against 4 slots
+
+**What:** `backtests/backtest_bot1_setup_compare.py`: Bot 1 at 3R with earnings
+rules, sector limit and 75% SPY parking (parking estimated). `FIXED_CAPITAL`
+added to `backtest_three_bots.py` (off by default).
+
+| Setup | Per year | Worst drop | Last 5 yrs | At 0.25% slippage | Fixed $100 risk on $10,000 |
+|---|---|---|---|---|---|
+| SPY | 15.0% | 33.7% | +68.1% | — | — |
+| 2 slots, 1 per sector (live) | 14.4% | 27.1% | +69.3% | 12.9% | 9.3% a year |
+| 4 slots, 1 per sector | 16.5% | 27.1% | +74.4% | 14.1% | 10.1% a year |
+| 4 slots, 2 per sector | 16.6% | 27.4% | +89.5% | 13.6% | 10.1% a year |
+
+**Why:** The user asked for a backtest against the current setup before
+changing any slots.
+
+**Result:** Both 4-slot setups beat the live setup from all 20 start dates, and
+beat SPY's 15.0% a year from all 20 with compounding. With fixed sizing, as the
+live bot does, gains do not compound and every setup trails SPY, so
+`PAPER_ACCOUNT_BALANCE` would need raising as the account grows. No settings
+changed.
+
+### 2026-11-06 — Making Bot 1 trade more: slots yes, looser entries no
+
+**What:** `backtests/backtest_bot1_more_trades.py` and `backtest_bot1_slots.py`
+(10 years, Bot 1 at 3R, earnings rules on). `SECTOR_LIMIT` added to
+`backtest_three_bots.py` (off by default).
+
+| Setup | Trades a year | Return | Max DD | Exp. R | Last 5 yrs |
+|---|---|---|---|---|---|
+| 2 slots, 1 per sector (live) | 17.7 | +52.2% | 9.2% | 0.257 | +17.9% |
+| 4 slots, 1 per sector | 20.6 | +87.5% | 8.7% | 0.331 | +21.0% |
+| 4 slots, 2 per sector | 25.3 | +98.2% | 10.2% | 0.280 | +35.2% |
+| 2 slots, RSI to 70 (no sector limit) | 24.8 | +49.3% | 13.0% | 0.176 | +20.2% |
+| 2 slots, volume 1.0 / 1.3 (no sector limit) | 23.3 | +39.7% | 20.0% | 0.161 | +38.2% |
+| 2 slots, no SPY filter (no sector limit) | 26.3 | +64.6% | 14.7% | 0.203 | +13.1% |
+
+**Why:** The user wants Bot 1 to trade more.
+
+**Result:** More slots beat 2 slots from all 20 start dates, with or without the
+sector limit. Looser entries add trades but lower profit per trade and raise
+drawdowns. RSI from 45 changed nothing. No settings changed yet.
+
+**Correction:** "Bot 1 alone, 2 slots" in the entry below (+67.7%, 14.9% a year
+with parking) left out the live 1-per-sector limit. With it, 2 slots gives
++52.2%, about the same as 1 slot, so Bot 1 with 75% parked is nearer the 1-slot
+estimate of 14.6% a year, a little behind SPY.
 
 ### 2026-11-06 — SPY parking raised to 75%; Bot 2 plan pick tested, stays off
 

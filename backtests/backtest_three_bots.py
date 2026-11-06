@@ -62,6 +62,12 @@ TARGET_BY_SOURCE = {}
 # Move the stop to the entry once the high reaches this R (None = only
 # after the half sells). Bots 1 and 2; it applies from the next session.
 BREAKEVEN_R = None
+# Most open trades per sector (None = no limit), for Bots 1 and 2.
+SECTOR_LIMIT = None
+# Size on this fixed amount, like PAPER_ACCOUNT_BALANCE live (None = compound).
+FIXED_CAPITAL = None
+# Bot 3's own slots, as live (None = it shares `slots` with the other bots).
+MOMENTUM_SLOTS = None
 TRAIL_ATR = 3.0
 EARNINGS_EXIT_DAYS = 1
 EARNINGS_SKIP_DAYS = 2
@@ -188,6 +194,13 @@ def simulate(lookup, calendar, stock_dfs, slots, earnings=None, slippage=hv.SLIP
     def bar(ticker, date_value):
         return hv.get_bar(stock_dfs, ticker, date_value)
 
+    def has_room(item, others):
+        if MOMENTUM_SLOTS is None:
+            return len(others) < slots
+        momentum = item["source"] == SOURCE_MOMENTUM
+        same = [o for o in others if (o["source"] == SOURCE_MOMENTUM) == momentum]
+        return len(same) < (MOMENTUM_SLOTS if momentum else slots)
+
     def sell(position, shares, price):
         nonlocal cash
         cash += shares * price
@@ -253,15 +266,17 @@ def simulate(lookup, calendar, stock_dfs, slots, earnings=None, slippage=hv.SLIP
                 mark = float(today["Open"]) if today is not None else position["last_close"]
                 equity_now += position["shares_open"] * mark
             for signal in pending:
-                if len(positions) >= slots:
-                    break
+                if not has_room(signal, positions):
+                    continue
                 today = bar(signal["ticker"], date_value)
                 if today is None:
                     continue
                 entry_price = float(today["Open"]) * (1 + slippage)
                 stop_distance = signal["atr"] * hv.ATR_MULTIPLIER
                 shares = min(
-                    math.floor(equity_now * hv.RISK_PER_TRADE_PCT / 100 / stop_distance),
+                    math.floor(
+                        (FIXED_CAPITAL or equity_now) * hv.RISK_PER_TRADE_PCT / 100 / stop_distance
+                    ),
                     math.floor(cash / entry_price),
                 )
                 if shares <= 0:
@@ -271,6 +286,7 @@ def simulate(lookup, calendar, stock_dfs, slots, earnings=None, slippage=hv.SLIP
                 positions.append({
                     "ticker": signal["ticker"],
                     "source": signal["source"],
+                    "sector": signal.get("sector"),
                     "trail": trail,
                     "atr": signal["atr"],
                     "entry_date": date_value,
@@ -326,11 +342,15 @@ def simulate(lookup, calendar, stock_dfs, slots, earnings=None, slippage=hv.SLIP
         # 5. After the close, queue next-day entries for free slots.
         if i < len(calendar) - 1:
             held = {p["ticker"] for p in positions}
-            free = slots - len(positions)
             for candidate in lookup.get(date_value, []):
-                if free <= 0:
-                    break
+                if not has_room(candidate, positions + pending):
+                    continue
                 if candidate["ticker"] in held:
+                    continue
+                sector = candidate.get("sector")
+                if SECTOR_LIMIT is not None and sector and sum(
+                    p["sector"] == sector for p in positions
+                ) >= SECTOR_LIMIT:
                     continue
                 if earnings and candidate["source"] != SOURCE_MOMENTUM:
                     days = earnings.days_until(candidate["ticker"], date_value)
@@ -338,7 +358,6 @@ def simulate(lookup, calendar, stock_dfs, slots, earnings=None, slippage=hv.SLIP
                         continue
                 pending.append(candidate)
                 held.add(candidate["ticker"])
-                free -= 1
 
     for position in positions[:]:
         close(position, calendar[-1], position["last_close"] * (1 - slippage), "END_OF_TEST")

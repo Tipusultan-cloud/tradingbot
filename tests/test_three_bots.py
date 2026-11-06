@@ -74,6 +74,26 @@ class BreakevenTests(unittest.TestCase):
         self.assertEqual(trades.iloc[0]["exit_reason"], "TIME_EXIT")
 
 
+class MomentumSlotTests(unittest.TestCase):
+    def tearDown(self):
+        three.MOMENTUM_SLOTS = None
+
+    def both(self):
+        lookup = {DAYS[0]: [
+            {"ticker": "ABC", "atr": 2.0, "source": "PULLBACK"},
+            {"ticker": "XYZ", "atr": 2.0, "source": "MOMENTUM"},
+        ]}
+        stocks = {"ABC": frame([FLAT]), "XYZ": frame([FLAT])}
+        return three.simulate(lookup, DAYS, stocks, 1, slippage=0.0)[0]
+
+    def test_shared_slot_takes_one_trade(self):
+        self.assertEqual(len(self.both()), 1)
+
+    def test_own_slot_lets_bot_3_trade_too(self):
+        three.MOMENTUM_SLOTS = 1
+        self.assertEqual(set(self.both()["source"]), {"PULLBACK", "MOMENTUM"})
+
+
 class TrailingExitTests(unittest.TestCase):
     def test_stop_trails_the_highest_close_with_entry_atr(self):
         trades, _, _ = run(

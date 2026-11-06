@@ -114,7 +114,8 @@ try {
 
     Write-Host ""
     Write-Host "Sending scan summary email if configured..."
-    & $Python ".\scan_notifications.py"
+    # Through Write-Host so the sent / failed line reaches the log.
+    & $Python ".\scan_notifications.py" | Out-String | Write-Host
     if ($LASTEXITCODE -ne 0) {
         Add-Problem "Scan completed, but the email notification failed. See the error above."
     }
