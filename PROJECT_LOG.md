@@ -299,10 +299,10 @@ The three bots:
 | Broker | Alpaca **paper**, auto trading on; automatic buys Bot 1 only (`AUTO_BUY_BOTS=A_PLUS`); hand buys plan pick only |
 | Schedule (Central, trading days) | Keep Awake 8:00 AM - 7:00 PM · Morning Buy 8:45 AM · Watchdog 9:30 AM / 8:00 PM · Scan 5:30 PM (buy-plan email ~5:40 PM) |
 | Webhook / ngrok | Off (`WEBHOOK_ENABLED=false`) |
-| Open trades | FTNT (Bot 2, off-plan, stop $120.94), REGN (Bot 3, trailing stop $907.69) |
-| Closed trades | MPC −$87.21 (−1.01R, off-plan, stopped after earnings) |
+| Open trades | FTNT (Bot 2, off-plan, stop $120.94) |
+| Closed trades | MPC −$87.21 (−1.01R, off-plan, stopped on earnings day); REGN −$84.78 (−1.00R, Bot 3, stopped 2026-11-05) |
 | Latest scan | 2026-11-05 1:18 AM: Bot 1 pick KMB (skipped at 8:45 AM, earnings that day); Bot 2 plan pick VLO; top sectors Health Care, Consumer Staples |
-| Tests | 332 pass |
+| Tests | 340 pass |
 
 ### Backtest results (Bot 1 history, 2019-10-07 → 2026-10-07 unless noted)
 | Test | Trades | Win % | Expectancy (R) | Profit factor | Return % | Max DD % |
@@ -353,6 +353,31 @@ slippage and off-plan tracking, webhook off (2026-11-05).
 ---
 
 ## 5. Activity Log (newest first)
+
+### 2026-11-05 23:05 — Trade lessons compare every day with SPY and the sector
+
+**What:** Every automatic lesson now shows the sector ETF next to SPY, lists
+each day held (stock, SPY, sector; last 10 days on long trades) and names the
+worst day the stock fell 2% or more while SPY and its sector did not. The
+takeaway uses these facts. `python trade_lessons.py --refresh` rewrites
+existing "Auto: " lessons. The MPC and REGN lessons were rewritten this way.
+
+**Why:** The user asked why MPC and REGN lost and wanted the fuller
+explanation in every note. Both old takeaways were partly wrong: MPC blamed
+earnings alone, though it was already 0.5R down with energy stocks before a
+report that beat estimates; REGN blamed the market alone, though it fell 4.4%
+on Nov 04 while SPY and XLV rose.
+
+**How:** `build_lesson()` takes the sector's bars and ETF;
+`fill_missing_lessons()` loads them using `universe_builder.SECTOR_ETFS`. If
+sector prices fail, the note is written without them. `--refresh` keeps the
+old text if prices cannot load, and never touches notes without the "Auto: "
+prefix (remove the prefix from an edited note to protect it).
+
+**Files changed:** `trade_lessons.py`, `tests/test_trade_lessons.py`.
+
+**Result:** 340 tests pass. Only the two notes changed in the journal. FTNT
+is open, so it gets its lesson when it closes. Not committed.
 
 ### 2026-11-05 — Problem review fixes: webhook off, off-plan trades, slippage, cleanup
 

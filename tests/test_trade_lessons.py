@@ -72,6 +72,69 @@ class BuildLessonTests(unittest.TestCase):
         )
         self.assertIn("a market-wide drop", text)
 
+    def test_every_day_is_listed_with_market_and_sector(self):
+        text = trade_lessons.build_lesson(
+            closed(97.0, "STOP"), bars([100, 100, 99, 98, 97]), bars([100, 100, 101, 102, 103]),
+            sector_bars=bars([50, 50, 51, 51, 51]), sector_etf="XLE",
+        )
+        self.assertIn("SPY +2.0% and XLE +2.0% over the same days (ABC -3.0%).", text)
+        self.assertIn(
+            "Day by day: Oct 30 ABC +0.0%, SPY +0.0%, XLE +0.0%; "
+            "Nov 02 ABC -1.0%, SPY +1.0%, XLE +2.0%; "
+            "Nov 03 ABC -1.0%, SPY +1.0%, XLE +0.0%.",
+            text,
+        )
+
+    def test_long_trades_show_only_the_last_days(self):
+        closes = [100 + day for day in range(60)]
+        text = trade_lessons.build_lesson(
+            closed(150.0, "TRAIL_3ATR", exit_time="2027-01-20T15:00:00Z"),
+            bars(closes), bars(closes),
+        )
+        self.assertIn(f"Last {trade_lessons.MAX_DAYS_SHOWN} days:", text)
+        self.assertLess(len(text), 1000)
+
+    def test_own_drop_is_named(self):
+        text = trade_lessons.build_lesson(
+            closed(97.0, "STOP"),
+            bars([100, 100, 101, 97, 97]),
+            bars([100, 100, 100, 101, 101]),
+            sector_bars=bars([50, 50, 50, 51, 51]), sector_etf="XLV",
+        )
+        self.assertIn("On Nov 03 ABC fell 4.0% against SPY +1.0% and XLV +2.0%", text)
+
+    def test_market_drop_with_own_drop_names_both(self):
+        # REGN: fell alone one day, then the market fell.
+        text = trade_lessons.build_lesson(
+            closed(97.0, "STOP", exit_time="2026-11-04T15:56:00Z"),
+            bars([100, 100, 101, 97, 96]),
+            bars([100, 100, 100, 101, 95]),
+            sector_bars=bars([50, 50, 50, 51, 48]), sector_etf="XLV",
+        )
+        self.assertIn("Takeaway: both the stock and the market: it dropped on its own on Nov 03", text)
+        self.assertNotIn("a market-wide drop", text)
+
+    def test_a_drop_with_the_sector_is_not_the_stock_alone(self):
+        text = trade_lessons.build_lesson(
+            closed(97.0, "STOP"),
+            bars([100, 100, 101, 97, 97]),
+            bars([100, 100, 101, 102, 103]),
+            sector_bars=bars([50, 50, 50, 48, 48]), sector_etf="XLE",
+        )
+        self.assertNotIn("came from the stock itself", text)
+
+    def test_weak_before_earnings_does_not_blame_earnings_alone(self):
+        # MPC: already sliding with energy stocks before the report.
+        text = trade_lessons.build_lesson(
+            closed(97.0, "STOP"),
+            bars([100, 100, 98.5, 97.5, 97]),
+            bars([100, 100, 100, 100, 100]),
+            [date(2026, 11, 3)],
+            bars([50, 50, 48, 47.5, 47]), "XLE",
+        )
+        self.assertIn("Takeaway: it was already 0.5R down with a weak sector before the report", text)
+        self.assertNotIn("holding through earnings", text)
+
     def test_target_hit(self):
         text = trade_lessons.build_lesson(
             closed(106.0, "PARTIAL+TARGET"), bars([100, 100, 103, 105, 107]), bars([1, 1, 1, 1, 1]),
@@ -132,6 +195,34 @@ class FillLessonTests(JournalCase):
         set_trade_note(trade_id, "exit_note", "My own lesson", self.database)
         self.assertEqual(self.fill(lambda ticker, day: bars([1])), [])
         self.assertEqual(get_closed_trades(self.database)[0]["exit_note"], "My own lesson")
+
+    def test_refresh_rewrites_auto_lessons_only(self):
+        auto_id = self.close_one("ABC")
+        hand_id = self.close_one("XYZ")
+        set_trade_note(auto_id, "exit_note", "Auto: old text", self.database)
+        set_trade_note(hand_id, "exit_note", "My own lesson", self.database)
+        written = trade_lessons.fill_missing_lessons(
+            self.database, fetch_bars=lambda ticker, day: bars([100, 100, 99, 98, 97]),
+            fetch_earnings=lambda ticker: [], today=date(2026, 11, 4), refresh=True,
+        )
+        self.assertEqual([ticker for ticker, _ in written], ["ABC"])
+        notes = {t["ticker"]: t["exit_note"] for t in get_closed_trades(self.database)}
+        self.assertIn("Day by day:", notes["ABC"])
+        self.assertEqual(notes["XYZ"], "My own lesson")
+
+    def test_refresh_keeps_the_old_text_without_prices(self):
+        trade_id = self.close_one()
+        set_trade_note(trade_id, "exit_note", "Auto: old text", self.database)
+
+        def offline(ticker, day):
+            raise ConnectionError("offline")
+
+        written = trade_lessons.fill_missing_lessons(
+            self.database, fetch_bars=offline, fetch_earnings=lambda ticker: [],
+            today=date(2026, 12, 1), refresh=True,
+        )
+        self.assertEqual(written, [])
+        self.assertEqual(get_closed_trades(self.database)[0]["exit_note"], "Auto: old text")
 
     def test_waits_for_price_data_then_gives_up(self):
         self.close_one()
