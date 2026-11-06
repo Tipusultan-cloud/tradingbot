@@ -191,6 +191,39 @@ class OpenTradeTests(JournalCase):
             self.buy({"ticker": "DEF", "atr": 1.0})
 
 
+class BotTargetTests(JournalCase):
+    def buy_as(self, strategy):
+        return open_trade(
+            self.client, STOCK, strategy, "AUTO", lambda ticker: 100.0, self.database
+        )
+
+    def test_bot_1_rest_sells_at_3r_after_the_fill(self):
+        order = self.buy_as("A_PLUS")
+        self.assertEqual((order["target"], order["target2"]), (106.0, 109.0))
+        self.client.fill("order-1", 100.4, 33)
+        trade = self.sync()["filled"][0]
+        self.assertEqual(
+            (trade["stop_price"], trade["target_price"], trade["target2_price"]),
+            (97.4, 106.4, 109.4),
+        )
+        limits = sorted(
+            float(request.take_profit.limit_price) for request in self.client.submitted[1:]
+        )
+        self.assertEqual(limits, [106.4, 109.4])
+
+    def test_bot_2_rest_stays_at_2_5r_after_the_fill(self):
+        order = self.buy_as("PULLBACK")
+        self.assertEqual(order["target2"], 107.5)
+        self.client.fill("order-1", 100.4, 33)
+        self.assertEqual(self.sync()["filled"][0]["target2_price"], 107.9)
+
+    def test_each_target_has_its_own_setting(self):
+        settings = {"A_PLUS_SECOND_REWARD_RISK_RATIO": "4", "SECOND_REWARD_RISK_RATIO": "2"}
+        with patch.dict(os.environ, settings):
+            self.assertEqual(trade_manager.second_reward_risk("A_PLUS"), 4)
+            self.assertEqual(trade_manager.second_reward_risk("PULLBACK"), 2)
+
+
 class OpenGapTests(JournalCase):
     def test_auto_buy_is_skipped_when_the_price_ran_away(self):
         stock = {**STOCK, "price": 100.0}

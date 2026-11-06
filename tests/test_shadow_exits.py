@@ -10,6 +10,7 @@ import pandas as pd
 
 from paper_journal import record_entry, record_exit
 from shadow_exits import (
+    RULES,
     entry_session_date,
     get_shadow_comparison,
     simulate,
@@ -121,6 +122,18 @@ class ReplayWindowTests(unittest.TestCase):
     def test_entry_time_uses_new_york_date(self):
         # 02:00 UTC on Jan 6 is still Jan 5 in New York.
         self.assertEqual(entry_session_date("2026-01-06T02:00:00Z"), ENTRY_DATE)
+
+
+class HalfThen3RTests(unittest.TestCase):
+    # Bot 1: half (5 shares) at 2R = 106, the rest at 3R = 109.
+
+    def test_rest_sells_at_3r(self):
+        state = run("HALF_2R_THEN_3R", [100, 103, 106.5, 110])
+        self.assertEqual(state["exit_reason"], "PARTIAL+TARGET")
+        self.assertEqual(state["exit_price"], 109)
+
+    def test_not_tracked_as_a_shadow_rule(self):
+        self.assertNotIn("HALF_2R_THEN_3R", RULES)
 
 
 class HalfThen25RTests(unittest.TestCase):

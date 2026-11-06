@@ -5,14 +5,15 @@ with a stop at price - 1.5 ATR. Once the buy fills, two OCO sell orders
 (a limit target and a stop, good till canceled) are placed at Alpaca:
 
   - half the shares: target 2R (REWARD_RISK_RATIO)
-  - the rest: target 2.5R (SECOND_REWARD_RISK_RATIO)
+  - the rest: Bot 1 target 3R (A_PLUS_SECOND_REWARD_RISK_RATIO), Bot 2
+    target 2.5R (SECOND_REWARD_RISK_RATIO)
 
 When the 2R half fills, the stop of the rest moves up to the entry price.
 The 2-slot limit counts open trades and orders not yet filled.
 
 The stop and targets are worked out again from the real fill price (same
 1.5 ATR distance), so a fill above the planned price still risks 1% and
-the targets stay a true 2R / 2.5R. An automatic buy is skipped when the
+the targets stay true R multiples. An automatic buy is skipped when the
 price is more than MAX_GAP_ATR (default 0.5) ATR above the scan price:
 the stock already ran and the planned entry is gone.
 
@@ -68,6 +69,7 @@ from paper_journal import (
     update_trade_orders,
 )
 from slot_selector import (
+    SOURCE_A_PLUS,
     SOURCE_MOMENTUM,
     busy_by_bot,
     max_open_trades,
@@ -102,13 +104,20 @@ def _iso(moment):
     return moment.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def risk_settings():
+def second_reward_risk(strategy=None):
+    """Target for the rest of the shares; only Bot 1 was tested at 3R."""
+    if strategy == SOURCE_A_PLUS:
+        return float(os.getenv("A_PLUS_SECOND_REWARD_RISK_RATIO", "3"))
+    return float(os.getenv("SECOND_REWARD_RISK_RATIO", "2.5"))
+
+
+def risk_settings(strategy=None):
     return {
         "account": float(os.getenv("PAPER_ACCOUNT_BALANCE", "10000")),
         "risk_pct": float(os.getenv("RISK_PER_TRADE_PCT", "1")),
         "atr_multiplier": float(os.getenv("ATR_MULTIPLIER", "1.5")),
         "reward_risk": float(os.getenv("REWARD_RISK_RATIO", "2")),
-        "second_reward_risk": float(os.getenv("SECOND_REWARD_RISK_RATIO", "2.5")),
+        "second_reward_risk": second_reward_risk(strategy),
     }
 
 
@@ -245,7 +254,7 @@ def open_trade(client, stock, strategy, entry_source, price_lookup, database_pat
             )
     if entry_source == SOURCE_AUTO:
         check_auto_protection(ticker, stock, strategy, database_path)
-    plan = plan_order(price, atr, risk_settings())
+    plan = plan_order(price, atr, risk_settings(strategy))
     if strategy == SOURCE_MOMENTUM:
         # Rides with a trailing stop; the 2R target is only for reference.
         plan["target2"] = None
@@ -494,7 +503,9 @@ def sync(client, price_lookup, database_path=None, today=None, delay=1.0):
             # hold theirs at Alpaca).
             if target2 is not None or pending["strategy"] == SOURCE_MOMENTUM:
                 try:
-                    levels = exit_levels(fill, float(pending["atr"]), risk_settings())
+                    levels = exit_levels(
+                        fill, float(pending["atr"]), risk_settings(pending["strategy"])
+                    )
                 except (TradeError, TypeError, ValueError):
                     levels = None
                 if levels:

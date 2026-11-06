@@ -30,7 +30,7 @@ The three bots:
 
 | Bot | Name | Buys | Exit |
 | --- | --- | --- | --- |
-| Bot 1 | A+ Hunter | strength: stocks passing every strict A+ rule (2.2–2.4) | half at 2R, rest at 2.5R, 20 days |
+| Bot 1 | A+ Hunter | strength: stocks passing every strict A+ rule (2.2–2.4) | half at 2R, rest at 3R, 20 days |
 | Bot 2 | Dip Buyer | S&P 500 leaders after a >5% pullback (2.5) | half at 2R, rest at 2.5R, 20 days |
 | Bot 3 | Momentum Rider | big jumps on huge volume (2.6) | trailing stop, no target, no time limit |
 
@@ -189,7 +189,7 @@ The three bots:
 - **How:** $10,000 reference account (`PAPER_ACCOUNT_BALANCE`) · risk 1%
   ($100) per trade (kept at 1% on purpose, 2026-10-31) · stop = fill −
   1.5 × ATR · shares = $100 ÷ stop distance · Bot 1 / Bot 2: half at 2R,
-  rest at 2.5R, max 20 sessions · Bot 3: trailing stop 3 ATR, no target.
+  rest at 3R (Bot 1) or 2.5R (Bot 2), max 20 sessions · Bot 3: trailing stop 3 ATR, no target.
   The 10-year backtest of the split exit: +54.3% vs +49.7% for all at 2R.
 
 ### 2.11 Paper journal — `paper_journal.py`, `paper_exits.py`, `shadow_exits.py`
@@ -299,10 +299,11 @@ The three bots:
 | Broker | Alpaca **paper**, auto trading on; automatic buys Bot 1 only (`AUTO_BUY_BOTS=A_PLUS`); hand buys plan pick only |
 | Schedule (Central, trading days) | Keep Awake 8:00 AM - 7:00 PM · Morning Buy 8:45 AM · Watchdog 9:30 AM / 8:00 PM · Scan 5:30 PM (buy-plan email ~5:40 PM) |
 | Webhook / ngrok | Off (`WEBHOOK_ENABLED=false`) |
+| SPY parking | 75% of idle cash (`SPY_PARK_FRACTION=0.75`, since 2026-11-06) |
 | Open trades | FTNT (Bot 2, off-plan, stop $120.94) |
 | Closed trades | MPC −$87.21 (−1.01R, off-plan, stopped on earnings day); REGN −$84.78 (−1.00R, Bot 3, stopped 2026-11-05) |
 | Latest scan | 2026-11-05 1:18 AM: Bot 1 pick KMB (skipped at 8:45 AM, earnings that day); Bot 2 plan pick VLO; top sectors Health Care, Consumer Staples |
-| Tests | 340 pass |
+| Tests | 360 pass |
 
 ### Backtest results (Bot 1 history, 2019-10-07 → 2026-10-07 unless noted)
 | Test | Trades | Win % | Expectancy (R) | Profit factor | Return % | Max DD % |
@@ -333,8 +334,8 @@ slippage and off-plan tracking, webhook off (2026-11-05).
 
 - [ ] Check that the scheduled buy-plan email arrives (~5:40 PM); the
       scan logs never show the "sent" line.
-- [ ] Backtest "Bot 2 buys only the clean #1 pick" (the plan pick rule). If
-      it holds up, turn Bot 2's automatic buys back on.
+- [x] Backtest "Bot 2 buys only the clean #1 pick" (2026-11-06): mixed, weak in
+      the last 5 years, so automatic buys stay off.
 - [ ] Backtest the half 2R + 2.5R exit on Bot 2 and with 2 slots.
 - [ ] Run Bot 1 / Bot 2 backtests with the earnings exit and the sector
       limit, to see what they cost in return.
@@ -353,6 +354,190 @@ slippage and off-plan tracking, webhook off (2026-11-05).
 ---
 
 ## 5. Activity Log (newest first)
+
+### 2026-11-06 — SPY parking raised to 75%; Bot 2 plan pick tested, stays off
+
+**What:** `SPY_PARK_FRACTION=0.75` set in `.env` (`.env.example` updated; the
+code default stays 0.5). The next market-open run buys about $3,409 of SPY
+(target $6,884, held $3,475). `backtests/backtest_bot2_plan_pick.py` tests the
+open item "Bot 2 buys only the clean #1 pick": first stock with no earnings
+warning, 2 slots with Bot 1 (10 years, Bot 1 at 3R).
+
+| Setup | Return | Max DD | Last 5 yrs | Last 2 yrs | With 75% parked: per year / DD |
+|---|---|---|---|---|---|
+| Bot 1 alone, 2 slots | +67.7% | 9.2% | +26.9% | +9.1% | 14.9% / 27.4% |
+| Bots 1+2, top 5 | +129.1% | 12.4% | +36.7% | +37.1% | 16.8% / 27.2% |
+| Bots 1+2, plan pick | +125.1% | 11.0% | +17.1% | -1.5% | 16.0% / 29.3% |
+
+**Why:** The user approved the parking change and the next test.
+
+**Result:** Automatic Bot 2 buys stay off. The plan pick beat Bot 1 alone over
+10 years from all 20 start dates, but did worse than Bot 1 alone in the last 5
+and last 2 years, and beat the top 5 from only 3 of 20. The large gap between
+two similar rules suggests these results depend heavily on which trades happen
+to fill the slots. Bad-news and held-sector warnings are not modelled. With 75%
+parked, the live setup is about level with SPY (14.9% vs 15.0% a year) with a
+smaller drawdown. Parking is estimated, and SPY share raises market risk.
+
+### 2026-11-06 — Moving Bot 1's stop to 0R sooner tested and rejected
+
+**What:** `backtests/backtest_bot1_breakeven.py` moves the stop to the entry at
+different profit levels (10 years, Bot 1 at 3R). `BREAKEVEN_R` added to
+`backtest_three_bots.py` (off by default).
+
+| Stop to 0R at | Return | Win % | Full losses | Near break-even exits | Exp. R |
+|---|---|---|---|---|---|
+| +2R (live) | +53.2% | 55.5 | 49 | 2 | 0.387 |
+| +1.5R | +53.2% | 52.5 | 46 | 8 | 0.382 |
+| +1R | +36.8% | 42.4 | 45 | 25 | 0.274 |
+| +0.75R | +43.1% | 39.2 | 39 | 33 | 0.299 |
+| +0.5R | +36.4% | 31.9 | 37 | 53 | 0.237 |
+| +0.25R | +27.6% | 21.6 | 27 | 81 | 0.164 |
+
+**Why:** The user asked about 0R.
+
+**Result:** No change. Moving sooner avoids some full losses but sells many
+trades at break-even that would have gone on to win. +1.5R only ties the live
+rule. A 20-start-date check crashed on a script error and was dropped.
+
+### 2026-11-06 — Best time to buy checked: keep 8:45 AM Central
+
+**What:** `backtests/backtest_buy_time.py` replays 274 backtest entry days since
+2020-09 on Alpaca IEX 5-minute bars (7 skipped), plus 10 years of daily bars.
+
+**Why:** The user asked what time is best to buy.
+
+**Result:** No change. On average the price was +0.11% above the open at 9:35
+and 9:45 AM New York, the cheapest times tested, against +0.35% at noon and
++0.14% at 3:55 PM. The gaps are smaller than their error (about 0.1-0.2 points),
+so no time is proven better. The day's low came before 10 AM on 124 of 274 days.
+
+### 2026-11-06 — What it takes to beat SPY (no settings changed)
+
+**What:** `backtests/backtest_beat_spy.py`: bots plus SPY parking over 10 years
+(Bot 1 at 3R, Bot 2 at 2.5R, earnings rules on; parking approximate).
+
+| Setup | Per year | Worst drop | Last 5 yrs | Last 2 yrs |
+|---|---|---|---|---|
+| SPY | 15.0% | 33.7% | +67.3% | +30.0% |
+| QQQ | 19.5% | 35.1% | +67.3% | +32.8% |
+| Bot 1, park 50% (closest to live) | 11.3% | 19.8% | +54.8% | +20.8% |
+| Bot 1, park 100% | 17.8% | 34.0% | +89.7% | +35.5% |
+| Bots 1+2, 2 slots, park 75% | 16.8% | 27.2% | +81.4% | +56.0% |
+| Bots 1+2, 2 slots, park 100% | 19.4% | 33.3% | +97.3% | +62.1% |
+| Bots 1+2, 2 slots, 1.5% risk, park 100% | 21.2% | 33.5% | +108.3% | +74.8% |
+
+**Why:** The user wants to beat SPY and others.
+
+**Result:** No bot beats SPY from trades alone; the bots beat it only as an
+add-on to SPY exposure. Bots 1+2 with 75% parked beat SPY with a smaller
+drawdown; 100% parked brings SPY's full drawdown. Survivorship bias flatters
+the bot part, and live sizing is fixed on PAPER_ACCOUNT_BALANCE while this test
+compounds. `TARGET_BY_SOURCE` added to `backtest_three_bots.py` (empty by
+default, saved results unchanged).
+
+### 2026-11-06 — Bot 1 target 4R checked: stay at 3R
+
+**What:** `backtests/backtest_bot1_targets.py` compares final targets over 10
+years, with 0.25% slippage and from 20 start dates.
+
+| Target | Return | Last 5 yrs | Last 2 yrs | Last 12 mo | Times hit | Median of 20 starts |
+|---|---|---|---|---|---|---|
+| 2.5R | +46.8% | +18.9% | +4.6% | +2.3% | 21 | +45.5% |
+| 3R (live) | +53.2% | +22.2% | +6.4% | +4.0% | 18 | +51.6% |
+| 3.5R | +53.1% | +18.4% | +2.7% | +0.7% | 11 | +51.4% |
+| 4R | +55.9% | +19.7% | +2.9% | +0.9% | 6 | +54.6% |
+| 5R | +55.9% | +18.4% | +4.3% | +2.2% | 3 | +54.6% |
+
+**Why:** The user asked to check 4R.
+
+**Result:** No change. 3R beat 2.5R from all 20 start dates; 4R beat 3R from
+only 13 of 20, by about 3 points in 10 years, all of it from the first 5 years.
+4R is rarely hit (6 times), so it mostly acts as "no target, sell at 20 days";
+5R gives the same return. 3R stays live.
+
+### 2026-11-06 — Bot 1's final target raised to 3R
+
+**What:** New Bot 1 trades sell the rest at 3R instead of 2.5R (half still at
+2R, stop to entry, 20 sessions). Bot 2 stays at 2.5R and Bot 3 is unchanged.
+New `.env` setting `A_PLUS_SECOND_REWARD_RISK_RATIO` (default 3).
+
+**Why:** The user approved it after the test below (+46.8% → +53.2%, better in
+both 5-year halves, same drawdown). Bot 2 has its own target because 3R was
+tested on Bot 1 only.
+
+**How:** `risk_settings(strategy)` picks the target both when buying and when
+the levels are reset from the fill. Journal-only Bot 1 trades replay the new
+`HALF_2R_THEN_3R`, which is not tracked as a shadow rule. The dashboard works
+out the "Rest" label from each trade's own prices, so older trades stay correct.
+
+**Files changed:** `trade_manager.py`, `shadow_exits.py`, `paper_exits.py`,
+`web/dashboard.html`, `.env.example`, `README.md`, `tests/test_auto_trading.py`,
+`tests/test_shadow_exits.py`, `backtests/backtest_three_bots.py` (comment).
+
+**Result:** 358 tests pass. No open order changed: the only open trade is
+FTNT (Bot 2). Dashboard server restarted on the new code (no scan started).
+
+### 2026-11-06 — Ways to make Bot 1 earn more, tested (no settings changed)
+
+**What:** New `backtests/backtest_bot1_levers.py` tests Bot 1 changes on the
+three-bots engine and data (10 years, $7,000). Base: +46.8%, drawdown 7.7%.
+
+| Change | Return | Max DD | First 5 yrs | Last 5 yrs |
+|---|---|---|---|---|
+| Rest of the trade at 3R, not 2.5R | +53.2% | 7.8% | +24.5% | +22.2% |
+| Rest at 4R | +55.9% | 7.8% | +28.7% | +19.7% |
+| Risk 1.5% / 2% per trade | +77.5% / +113.7% | 11.6% / 14.6% | +34.0% / +47.2% | +32.9% / +45.0% |
+| Bot 1 alone, 2 slots | +62.5% | 9.3% | +32.5% | +21.6% |
+| Bot 2 fills 2 slots | +146.9% | 12.6% | +67.8% | +36.3% |
+| Score 90 instead of 95 | +21.5% | 10.4% | +11.1% | +9.5% |
+| 3 ATR trail, no target, no earnings rules | +50.4% | 9.3% | +13.7% | +30.0% |
+
+**Why:** The user asked how to make Bot 1 earn more.
+
+**Result:** A wider final target is the only change that raised profit per
+trade in both 5-year halves without a bigger drawdown (+0.34R → +0.39R at
+3R), but the sample is small (about 120 trades). Loosening the score is
+clearly worse. More risk scales gains and drawdowns together. Bot 1 rarely
+fills a second slot. With 50% of idle cash in SPY (approximate), the base gives
++185% with a 19.8% drawdown, and most of that gain is SPY. Next: decide on
+the 3R target.
+
+### 2026-11-06 — All three bots head to head over 10 years
+
+**What:** New `backtests/backtest_three_bots.py` runs each bot alone on one
+engine with its live exits (2016-11-07 → 2026-11-05, start $7,000, 1% risk,
+1 slot, 0.05% slippage). Bots 1 and 2 include the earnings exit and earnings
+buy block.
+
+| Test | Trades | Win % | Exp. R | Return | Per year | Max DD | Last 5 years | At 0.25% slippage |
+|---|---|---|---|---|---|---|---|---|
+| Bot 2 Dip Buyer | 219 | 46.6 | 0.22 | +58.3% | 4.7% | 7.4% | +11.5% | +34.5% |
+| Bot 1 A+ Hunter | 121 | 54.5 | 0.34 | +46.8% | 3.9% | 7.7% | +18.9% | +33.2% |
+| Bot 3 Momentum Rider | 106 | 32.1 | 0.21 | +20.3% | 1.9% | 12.2% | -1.2% | +14.7% |
+| SPY buy and hold | — | — | — | +302.7% | 15.0% | 33.7% | +67.3% | — |
+
+**Why:** The user asked which bot comes out best. Earlier numbers used
+different exits and scripts, so they could not be compared.
+
+**How:** Fresh prices for 5,905 stocks from 2015
+(`results/backtests/three_bots_prices.pkl`, gitignored). Results are in
+`three_bots_comparison.csv`, `_trades.csv` and `_yearly.csv`.
+
+**Result:** Bot 2 made the most over 10 years, but nearly all of it in the
+first 5 (+42.2%); Bot 1 led the last 5 years and has the best R per trade while
+invested 44% of the time (Bot 2 88%). The gap between them is small: at 0.25%
+slippage they tie, and an earlier test moved 18 points on a one-session window
+shift. Bot 3 came last and is negative without its top 3 trades (-$595); its
+4.2% a year from 2026-10-31 did not repeat (1.9% here), a test that was not
+saved, so the cause is not proven. The earnings rules cost Bot 2 return (+83.7%
+→ +58.3%, drawdown 10.1% → 7.4%) and Bot 1 little (+48.9% → +46.8%). No bot
+beat SPY's return; all had far smaller drawdowns. Idle cash earns 0 here (no SPY
+parking). Survivorship bias remains; no sector limit or bad-news block.
+
+**Files changed:** `backtests/backtest_three_bots.py`,
+`tests/test_three_bots.py`, `results/backtests/three_bots_*.csv`. No bot
+settings changed. Not committed.
 
 ### 2026-11-05 23:05 — Trade lessons compare every day with SPY and the sector
 

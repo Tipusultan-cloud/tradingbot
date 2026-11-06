@@ -49,6 +49,12 @@ RULES = {
 HISTORY_DAYS_BEFORE_ENTRY = 60
 
 
+# Replayed for journal-only Bot 1 trades, not tracked as a shadow rule.
+REPLAY_ONLY_RULES = {
+    "HALF_2R_THEN_3R": {"partial_r": 2.0, "target_r": 3.0, "max_hold_days": 20},
+}
+
+
 def initialize_shadow_table(database_path=None):
     initialize_journal(database_path)
     with _connection(database_path) as connection:
@@ -87,7 +93,7 @@ def simulate(rule, entry_date, entry_price, stop_price, shares, bars):
     `bars` may start before the entry date; earlier rows are ignored.
     Returns the rule's state after the last bar.
     """
-    settings = RULES[rule]
+    settings = {**RULES, **REPLAY_ONLY_RULES}[rule]
     risk_per_share = entry_price - stop_price
     planned_risk = risk_per_share * shares
     target_r = settings.get("target_r")

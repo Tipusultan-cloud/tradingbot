@@ -498,7 +498,7 @@
     <div id="attention" class="attention" hidden></div>
 
     <div id="positions" class="section-title">
-      <div><h2>Open positions</h2><p id="open-position-summary">Bot 1 / Bot 2: half sells at 2R (then the stop moves to entry), the rest at 2.5R, or after 20 days. Bot 3: rides with a trailing stop, no target.</p></div>
+      <div><h2>Open positions</h2><p id="open-position-summary">Bot 1 / Bot 2: half sells at 2R (then the stop moves to entry), the rest at 3R (Bot 1) or 2.5R (Bot 2), or after 20 days. Bot 3: rides with a trailing stop, no target.</p></div>
       <span id="broker-note" class="tag">Checking auto trading…</span>
     </div>
     <section id="positions-grid" class="positions"></section>
@@ -819,6 +819,13 @@
       }
     }
 
+    // The rest's target in R, from the trade's own prices.
+    function restTarget(trade) {
+      const risk = Number(trade.entry_price) - Number(trade.stop_price);
+      if (trade.target2_price == null || !(risk > 0)) return "target";
+      return `${Number(((Number(trade.target2_price) - Number(trade.entry_price)) / risk).toFixed(1))}R`;
+    }
+
     function priceTrack(trade) {
       const stop = Number(trade.stop_price);
       const entry = Number(trade.entry_price);
@@ -852,7 +859,7 @@
         { price: stopNow, kind: "stop", name: activeStop != null ? "Stop (moved)" : "Stop", tip: activeStop != null ? "Stop moved up to the entry price after the half sold." : "Sell everything if the price falls here." },
         ...(activeStop != null && Math.abs(activeStop - entry) < 0.005 ? [] : [{ price: entry, kind: "entry", name: "Entry", tip: "Your buy price." }]),
         { price: t1, kind: "target", name: t2 ? "½ at 2R" : "Target 2R", tip: t2 ? "Half the shares sell here." : "All shares sell here (trade opened before the split exit)." },
-        ...(t2 ? [{ price: t2, kind: "target", name: "Rest 2.5R", tip: "The other half sells here." }] : []),
+        ...(t2 ? [{ price: t2, kind: "target", name: `Rest ${restTarget(trade)}`, tip: "The other half sells here." }] : []),
       ];
       for (const tick of ticks) {
         const left = pos(tick.price);
@@ -990,7 +997,7 @@
         const note = trade.strategy === "MOMENTUM"
           ? `Trailing stop ${money(trade.active_stop_price ?? trade.stop_price)} · raised daily, no target`
           : trade.partial_shares
-            ? `Half sold at ${money(trade.partial_exit_price)} · rest rides to 2.5R`
+            ? `Half sold at ${money(trade.partial_exit_price)} · rest rides to ${restTarget(trade)}`
             : trade.broker_order_id ? "Real stop and target orders at Alpaca" : "Journal-only · checked by the daily scan";
         actions.appendChild(el("span", "", note + (hold?.exitDay ? ` · sells ~${shortDate(hold.exitDay)} if neither is hit` : "")));
         if (broker.enabled && trade.broker_order_id) {
@@ -1098,7 +1105,7 @@
         `About ${risk.shares ?? "?"} shares near $${number(risk.entry_reference, 2)}.\n` +
         (stock.source === "MOMENTUM"
           ? `Bot 3 rides it: a stop 1.5 ATR below, raised daily to 3 ATR below the highest close. No target.`
-          : `After the buy fills: a stop 1.5 ATR below, half sells at 2R, the rest at 2.5R.`)
+          : `After the buy fills: a stop 1.5 ATR below, half sells at 2R, the rest at ${stock.source === "A_PLUS" ? "3R" : "2.5R"}.`)
       );
       if (!ok) return;
       button.disabled = true;
@@ -1289,7 +1296,7 @@
     const exitLabel = (reason) => {
       if (typeof reason === "string" && reason.startsWith("PARTIAL+")) {
         const rest = reason.slice("PARTIAL+".length);
-        const restLabel = rest === "TARGET" || rest === "GAP_TARGET" ? "rest at 2.5R"
+        const restLabel = rest === "TARGET" || rest === "GAP_TARGET" ? "rest at target"
           : ["STOP", "GAP_STOP", "TRAIL_STOP", "GAP_TRAIL_STOP"].includes(rest) ? "rest at entry (stop)"
           : `rest: ${(exitLabels[rest] || rest).toLowerCase()}`;
         return `Half at 2R, ${restLabel}`;
@@ -1387,7 +1394,7 @@
       for (const [key, label, current] of [
         ["ACTUAL", "Actual exits", false],
         ["RULE_2R_20D", "2R or 20 days (old)", false],
-        ["HALF_2R_THEN_2_5R", "Half 2R, rest 2.5R (now)", true],
+        ["HALF_2R_THEN_2_5R", "Half 2R, rest 2.5R (Bot 2 now)", true],
         ["HALF_2R_TRAIL", "Half 2R, trail rest", false],
       ]) {
         const total = totals[key];

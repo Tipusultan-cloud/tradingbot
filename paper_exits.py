@@ -1,14 +1,14 @@
-"""Automatic paper exits: half at 2R, the rest at 2.5R, stop or 20 days.
+"""Automatic paper exits: half at 2R, the rest at target, stop or 20 days.
 
 Runs in the daily scan before slot_selector.py, so a slot freed by an
 exit can be refilled the same morning. Each open trade is replayed on
 completed daily bars with the backtested rule (shadow_exits.py
-HALF_2R_THEN_2_5R):
+HALF_2R_THEN_2_5R, or HALF_2R_THEN_3R for Bot 1):
 
   - stop: the recorded stop price (entry - 1.5 ATR)
   - first target: half the shares are sold at 2R above entry, and the
     stop of the rest moves up to the entry price
-  - second target: the rest are sold at 2.5R above entry
+  - second target: the rest are sold at 2.5R above entry (Bot 1: 3R)
   - time exit: at the close of the 20th session held
   - the stop is checked before the targets; a gap through a level fills
     at the open; the entry day's high and low are skipped
@@ -37,8 +37,10 @@ from paper_journal import (
 from shadow_exits import NEW_YORK, entry_session_date, fetch_daily_bars, simulate
 
 EXIT_RULE = "HALF_2R_THEN_2_5R"
+A_PLUS_EXIT_RULE = "HALF_2R_THEN_3R"
 # Bot 3 (momentum) rides: stop trails 3 ATR below the highest close.
 MOMENTUM_EXIT_RULE = "TRAIL_3ATR"
+EXIT_RULES = {"A_PLUS": A_PLUS_EXIT_RULE, "MOMENTUM": MOMENTUM_EXIT_RULE}
 
 
 def market_close_utc(exit_date):
@@ -74,7 +76,7 @@ def close_paper_trades(database_path=None, fetch=fetch_daily_bars):
             continue
 
         state = simulate(
-            MOMENTUM_EXIT_RULE if trade["strategy"] == "MOMENTUM" else EXIT_RULE,
+            EXIT_RULES.get(trade["strategy"], EXIT_RULE),
             entry_date,
             trade["entry_price"],
             trade["stop_price"],
@@ -117,7 +119,7 @@ def close_paper_trades(database_path=None, fetch=fetch_daily_bars):
 def main():
     print()
     print("================================")
-    print("PAPER EXITS (STOP / HALF 2R + REST 2.5R / 20 DAYS)")
+    print("PAPER EXITS (STOP / HALF 2R + REST AT TARGET / 20 DAYS)")
     print("================================")
     try:
         result = close_paper_trades()

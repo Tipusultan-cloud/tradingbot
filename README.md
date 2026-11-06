@@ -206,8 +206,8 @@ Above its 200-day average, with EMA20 > EMA50
 Down more than 5% over the last 5 sessions
 ```
 
-Stop, targets and position size are the same as for A+ trades (1.5 × ATR,
-half at 2R and the rest at 2.5R, 1% risk). Pullbacks use no market filter. Earnings and news are shown as
+Stop and position size are the same as for A+ trades (1.5 × ATR, 1% risk);
+half sells at 2R and the rest at 2.5R (A+ trades: 3R). Pullbacks use no market filter. Earnings and news are shown as
 warnings, not blocks, because neither was in the pullback backtest. The
 pullback ranking always uses the S&P 500, whatever `UNIVERSE_SOURCE` is.
 
@@ -272,7 +272,7 @@ Account reference: $10,000
 Maximum risk per trade: 1%
 Stop: 1.5 × ATR
 Exit: half the shares at 2R, then the stop moves to the entry price
-      and the rest sell at 2.5R
+      and the rest sell at 3R (Bot 1) or 2.5R (Bot 2)
 Maximum holding period: 20 trading days
 Typical historical holding period: about 5-15 trading days
 ```
@@ -323,10 +323,11 @@ gain is small. Selling everything at 3R was worse (+37%). Trades opened before
 - Every buy is a market buy. Once it fills, two Alpaca **OCO** sell orders
   (a limit target plus a real stop-loss 1.5 × ATR below the **fill price**,
   kept until one fills) are placed: half the shares at the 2R target,
-  the rest at 2.5R (`SECOND_REWARD_RISK_RATIO`). Shares risk 1% of
-  `PAPER_ACCOUNT_BALANCE`. A 1-share trade sells at 2.5R. The stop and
-  targets are set from the real fill, so a fill above the planned price
-  still risks 1% and the targets stay a true 2R / 2.5R (Bot 3's stop too).
+  the rest at 3R for Bot 1 (`A_PLUS_SECOND_REWARD_RISK_RATIO`) or 2.5R for
+  Bot 2 (`SECOND_REWARD_RISK_RATIO`). Shares risk 1% of
+  `PAPER_ACCOUNT_BALANCE`. A 1-share trade sells at that second target. The
+  stop and targets are set from the real fill, so a fill above the planned
+  price still risks 1% and the targets stay true R multiples (Bot 3's stop too).
 - When the 2R half fills, the stop of the rest is moved up to the entry
   price, so the rest cannot turn into a loss. This happens on the next sync
   (scan or dashboard refresh), not instantly.
