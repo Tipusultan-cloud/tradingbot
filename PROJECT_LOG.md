@@ -355,6 +355,36 @@ slippage and off-plan tracking, webhook off (2026-11-05).
 
 ## 5. Activity Log (newest first)
 
+### 2026-11-08 — Bot 1 back to the S&P 500 only
+
+**What:** `UNIVERSE_SOURCE` in `.env` changed from `SP500_TOP200` to `SP500`.
+
+**Why:** On 2026-10-27, adding the 200 most-traded other US stocks tested worse
+for Bot 1 (holdout +1.8% vs +10.1%), and every Bot 1 backtest since has used the
+S&P 500 only, so the live Bot 1 did not match what was tested. Approved by the user.
+
+**Result:** `load_source_universe()` now returns 503 S&P 500 stocks with no added
+list. Takes effect at the next evening scan. Bot 2 always used the S&P 500, and
+Bot 3 builds its own list, so neither changes.
+
+### 2026-11-06 — New bot colors on the dashboard
+
+**What:** Bot 1 teal `#14938d`, Bot 2 purple `#a35ec1`, Bot 3 copper `#ad721c`, as
+`--bot1` to `--bot3` tokens in `web/dashboard.html`, with lighter `-text` tints
+for small text (contrast 10:1 or better).
+
+**Why:** The user asked for new colors. Bot 1's gold was almost the same as the
+warning amber (OKLab difference 3.1) and Bot 3's rose was close to the loss red
+(10.0), so bot colors could be read as alerts.
+
+**How:** Searched colors with the dataviz checks, ported to Python because Node
+is not installed: worst pair 19.0 normal vision and 8.4 color-blind; at least
+15.2 from the status colors for normal vision, 5.8 color-blind (below the 8
+target, allowed because a bot name always sits beside its color).
+
+**Result:** Checked on the live page in headless Chrome. One full test run failed
+once and 7 reruns passed; the failing test was not identified.
+
 ### 2026-11-06 — Bots 1+2 against all three, same number of open trades
 
 **What:** `backtests/backtest_which_bots.py` (10 years, Bot 1 at 3R, 1 per sector,
