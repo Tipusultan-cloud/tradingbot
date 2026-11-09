@@ -300,8 +300,8 @@ The three bots:
 | Schedule (Central, trading days) | Keep Awake 8:00 AM - 7:00 PM · Morning Buy 8:45 AM · Watchdog 9:30 AM / 8:00 PM · Scan 5:30 PM (buy-plan email ~5:40 PM) |
 | Webhook / ngrok | Off (`WEBHOOK_ENABLED=false`) |
 | SPY parking | 75% of idle cash (`SPY_PARK_FRACTION=0.75`, since 2026-11-06) |
-| Open trades | FTNT (Bot 2, off-plan, stop $120.94) |
-| Closed trades | MPC −$87.21 (−1.01R, off-plan, stopped on earnings day); REGN −$84.78 (−1.00R, Bot 3, stopped 2026-11-05) |
+| Open trades | None (only the SPY parking) |
+| Closed trades | MPC −$87.21 (−1.01R, off-plan, stopped on earnings day); REGN −$84.78 (−1.00R, Bot 3, stopped 2026-11-05); FTNT −$96.34 (−1.01R, off-plan, stopped 2026-11-06); total −$268.33 |
 | Latest scan | 2026-11-05 1:18 AM: Bot 1 pick KMB (skipped at 8:45 AM, earnings that day); Bot 2 plan pick VLO; top sectors Health Care, Consumer Staples |
 | Tests | 362 pass |
 
