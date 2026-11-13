@@ -345,7 +345,8 @@ slippage and off-plan tracking, webhook off (2026-11-05).
       appear, and the stop moves to entry after the half fills.
 - [ ] After 10+ closed trades per bot (2-3 months), compare each bot with
       its backtest in the report card.
-- [x] Merge `news-exits-and-universe-options` into `main` (2026-11-05, fast-forward).
+- [x] Merge `news-exits-and-universe-options` into `main` (2026-11-05, fast-forward;
+      again 2026-11-13 up to `c35d57d`).
 - [ ] Move off the home PC: review / apply Terraform (Azure VM) only after
       approving the plan and cost; then monitoring and a dashboard login.
 - [ ] Docker, CI pipeline, security scanning.
@@ -354,6 +355,15 @@ slippage and off-plan tracking, webhook off (2026-11-05).
 ---
 
 ## 5. Activity Log (newest first)
+
+### 2026-11-13 — Branch merged into main and pushed
+- **What:** `news-exits-and-universe-options` merged into `main` (fast-forward
+  to `c35d57d`) and both pushed to GitHub. Brings the Nov 5–13 work to main:
+  trade-vs-SPY lessons, Bot 1 3R target, slot and bot-mix backtests, bot
+  colours, FTNT log, hover shine.
+- **How:** Owner ran `git switch main`, `git merge --ff-only
+  news-exits-and-universe-options`, `git push origin main`, and pushed the branch.
+- **Result:** `main`, `origin/main` and the branch all at `c35d57d`.
 
 ### 2026-11-13 — Player-card light shine on the three bot cards
 - **What:** While a bot card is hovered, a slanted band of light in the bot's
