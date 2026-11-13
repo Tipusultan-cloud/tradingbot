@@ -355,6 +355,36 @@ slippage and off-plan tracking, webhook off (2026-11-05).
 
 ## 5. Activity Log (newest first)
 
+### 2026-11-13 — Player-card light shine on the three bot cards
+- **What:** While a bot card is hovered, a slanted band of light in the bot's
+  colour waves across it from left to right, repeating every 1.8 s, like a
+  football-game player card. No tilt or other movement of the card.
+- **Why:** Owner asked for a player-card hover with only the light waving
+  left to right. (A first version with 3D tilt was replaced the same day.)
+- **How:** CSS only: a `::after` band on `.bot-card[data-bot]` slides from
+  off-card left to off-card right with the `card-shine` keyframes. Marked
+  `!important` so the reduced-motion rule doesn't stop it (Windows Animation
+  effects are off on this PC).
+- **Also:** The top menu links (Overview, Bots, Market, History, System) got
+  the same light wave on hover, in sky blue, reusing the `card-shine`
+  keyframes.
+- **Files changed:** `web/dashboard.html`
+
+### 2026-11-13 — Nov 10–13 work removed
+- **What:** Everything added from Nov 10 to Nov 13 was taken out, putting the project
+  back to the Nov 8 commit `551a80b`. Removed: Keep Awake log entry,
+  scan/buy date and time in the buy plan, and every dashboard change from
+  those days (scan date per bot list, date pill, electric hover, fireworks,
+  money-sign logo, Welcome splash, animation removal).
+- **Why:** Owner asked to remove everything added in the last 3–4 days.
+- **How:** Saved all of it to branch `backup/before-removing-nov10-13`
+  (commit `79abc35`), then `git reset --hard 551a80b` on
+  `news-exits-and-universe-options`. Nothing had been pushed, so the
+  GitHub copy didn't need changing.
+- **Files changed:** `buy_plan.py`, `tests/test_buy_plan.py`,
+  `web/dashboard.html`, `PROJECT_LOG.md` (back to their Nov 8 versions).
+- **Next:** Restore any single piece from the backup branch if wanted.
+
 ### 2026-11-08 — Bot 1 back to the S&P 500 only
 
 **What:** `UNIVERSE_SOURCE` in `.env` changed from `SP500_TOP200` to `SP500`.

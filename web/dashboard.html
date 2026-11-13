@@ -79,6 +79,16 @@
     .nav a { color: var(--text-2); text-decoration: none; font-size: 13px; font-weight: 500; padding: 8px 12px; border-radius: 10px; transition: background .2s, color .2s; }
     .nav a:hover { background: var(--glass); color: var(--text); }
     .nav a[aria-current="page"] { background: rgba(255,255,255,.09); color: var(--text); box-shadow: 0 1px 0 rgba(255,255,255,.08) inset; }
+    /* Same player-card shine as the bot cards: a band of light waves left
+       to right across a menu link while it is hovered. */
+    .nav a { position: relative; overflow: hidden; }
+    .nav a::after {
+      content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 60%; pointer-events: none; opacity: 0;
+      background: linear-gradient(100deg, transparent 0%, color-mix(in srgb, var(--sky) 30%, transparent) 32%, rgba(255,255,255,.32) 50%, color-mix(in srgb, var(--sky) 30%, transparent) 68%, transparent 100%);
+      mix-blend-mode: screen;
+      transform: translateX(-130%) skewX(-20deg);
+    }
+    .nav a:hover::after { opacity: 1; animation: card-shine 1.8s ease-in-out infinite !important; }
     .nav-badge { display: inline-block; min-width: 18px; margin-left: 6px; padding: 0 5px; border-radius: 999px; background: var(--bad); color: #fff; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; }
     .nav-badge[hidden] { display: none; }
     .page[hidden] { display: none; }
@@ -259,6 +269,22 @@
     .bot-card[data-bot]:focus-visible { outline: 2px solid var(--bot); outline-offset: 3px; }
     .open-hint { margin-top: 12px; font-size: 11.5px; font-weight: 600; color: color-mix(in srgb, var(--bot) 70%, #fff); opacity: .75; }
     .bot-card[data-bot]:hover .open-hint { opacity: 1; }
+    /* Player-card shine: while a bot card is hovered, a slanted band of light
+       waves across it from left to right, over and over. The !important
+       keeps it playing even with the reduced-motion rule below (this PC
+       has Windows "Animation effects" off). */
+    .bot-card[data-bot]::after {
+      content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 55%; pointer-events: none; opacity: 0;
+      background: linear-gradient(100deg, transparent 0%, color-mix(in srgb, var(--bot) 30%, transparent) 32%, rgba(255,255,255,.32) 50%, color-mix(in srgb, var(--bot) 30%, transparent) 68%, transparent 100%);
+      mix-blend-mode: screen;
+      transform: translateX(-130%) skewX(-20deg);
+    }
+    .bot-card[data-bot]:hover::after { opacity: 1; animation: card-shine 1.8s ease-in-out infinite !important; }
+    @keyframes card-shine {
+      0%   { transform: translateX(-130%) skewX(-20deg); }
+      70%  { transform: translateX(260%) skewX(-20deg); }
+      100% { transform: translateX(260%) skewX(-20deg); }
+    }
     .tabs { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
     .section-title { flex-wrap: wrap; }
     .bot-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; padding: 16px 20px 0; }
